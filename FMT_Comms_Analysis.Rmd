@@ -14,6 +14,7 @@ Analysis by communication type addressing the questions defined in the README fi
 library(tidyverse)
 library(googlesheets4)
 googlesheets4::gs4_auth("p.hegedus@comcast.net")
+source("gpath.R")
 source("fmt_fxns.R")
 
 fmt_hex <- c("#FF8A3D", "#8C9093")             # orange, gray
@@ -28,7 +29,7 @@ Import data, split by type. Do some basic preparations (e.g. Weekday to characte
 ```{r}
 ## import data
 fmt_e <- read_sheet(
-  ss = "https://docs.google.com/spreadsheets/d/1dtmkJc1cTFrGrEF4c5AHsOcMwqBzveRHU4mI44oAgnc/edit#gid=1584951731",
+  ss = gpath,
   sheet = "Email",
   range = "Email!A1:G68",
   col_types = "cDtcnnn") %>% 
@@ -64,7 +65,7 @@ First, the Forward Montana instagram...
 ```{r}
 ## import data
 fmt_i <- read_sheet(
-  ss = "https://docs.google.com/spreadsheets/d/1dtmkJc1cTFrGrEF4c5AHsOcMwqBzveRHU4mI44oAgnc/edit#gid=1584951731",
+  ss = gpath,
   sheet = "Instagram",
   range = "Instagram!A2:H70",
   col_types = "cDtcnnnc") %>% 
@@ -120,7 +121,7 @@ Now the Forward Montana Foundation instagram...
 ```{r}
 ## import data
 fmtf_i <- read_sheet(
-  ss = "https://docs.google.com/spreadsheets/d/1dtmkJc1cTFrGrEF4c5AHsOcMwqBzveRHU4mI44oAgnc/edit#gid=1584951731",
+  ss = gpath,
   sheet = "Instagram",
   range = "Instagram!A84:H111",
   col_types = "cDtcnnnc") %>% 
@@ -171,7 +172,7 @@ insta <- rbind(fmt_i, fmtf_i)
 ```{r}
 ## import data
 fmt_f <- read_sheet(
-  ss = "https://docs.google.com/spreadsheets/d/1dtmkJc1cTFrGrEF4c5AHsOcMwqBzveRHU4mI44oAgnc/edit#gid=1584951731",
+  ss = gpath,
   sheet = "FB",
   range = "FB!A2:H35",
   col_types = "cDtcnnnc") %>% 
@@ -213,7 +214,7 @@ Now the Forward Montana Foundation FB.
 ```{r}
 ## import data
 fmtf_f <- read_sheet(
-  ss = "https://docs.google.com/spreadsheets/d/1dtmkJc1cTFrGrEF4c5AHsOcMwqBzveRHU4mI44oAgnc/edit#gid=1584951731",
+  ss = gpath,
   sheet = "FB",
   range = "FB!A44:H56",
   col_types = "cDtcnnnc") %>% 
@@ -258,7 +259,7 @@ fb <- rbind(fmt_f, fmtf_f)
 ```{r}
 ## import data
 tt <- read_sheet(
-  ss = "https://docs.google.com/spreadsheets/d/1dtmkJc1cTFrGrEF4c5AHsOcMwqBzveRHU4mI44oAgnc/edit#gid=1584951731",
+  ss = gpath,
   sheet = "TikTok",
   col_types = "cDtcnnn") %>% 
   fixDayDateTime()
