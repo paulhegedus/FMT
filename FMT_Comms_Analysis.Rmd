@@ -1,0 +1,297 @@
+---
+title: "FMT Comms Analysis"
+author: "Paul Hegedus"
+date: '2022-07-02'
+output: html_document
+---
+
+# Forward MT Communications Analysis
+Analysis by communication type addressing the questions defined in the README file. 
+
+# Set Up
+##### Packages and colors.
+```{r}
+library(tidyverse)
+library(googlesheets4)
+googlesheets4::gs4_auth("p.hegedus@comcast.net")
+source("fmt_fxns.R")
+
+fmt_hex <- c("#FF8A3D", "#8C9093")             # orange, gray
+fmtf_hex <- c("#06038D", "#489FDF", "#D6001C") # dark blue, light blue, red
+hex <- c(fmt_hex[1], fmtf_hex[1])
+```
+
+# Import Data
+Import data, split by type. Do some basic preparations (e.g. Weekday to character & day of week).
+
+## Email
+```{r}
+## import data
+fmt_e <- read_sheet(
+  ss = "https://docs.google.com/spreadsheets/d/1dtmkJc1cTFrGrEF4c5AHsOcMwqBzveRHU4mI44oAgnc/edit#gid=1584951731",
+  sheet = "Email",
+  range = "Email!A1:G68",
+  col_types = "cDtcnnn") %>% 
+  fixDayDateTime()
+```
+
+Initial summary statistics.
+```{r}
+summary(fmt_e)
+```
+
+Looks like there is missing data in 'Open Rate' & 'Time'.
+```{r}
+col_of_int <- c("Weekday", "usa_date", "ampm_time", 
+                "Email", "Recipients", "Open Rate")
+# TODO: MISSING DATA
+fmt_e[is.na(fmt_e$`Open Rate`), col_of_int]
+## fill gap in Time
+fmt_e[is.na(fmt_e$Time), col_of_int]
+fmt_e[is.na(fmt_e$Time), "ampm_time"] <- "03:30 PM"
+fmt_e[is.na(fmt_e$Time), "hour"] <- "3 PM"
+fmt_e[is.na(fmt_e$Time), "hour_f"] <- "3 PM"
+```
+
+```{r}
+fmt_e$Org <- "FMT"
+email <- fmt_e
+```
+
+## Instagram
+### Forward Montana
+First, the Forward Montana instagram...
+```{r}
+## import data
+fmt_i <- read_sheet(
+  ss = "https://docs.google.com/spreadsheets/d/1dtmkJc1cTFrGrEF4c5AHsOcMwqBzveRHU4mI44oAgnc/edit#gid=1584951731",
+  sheet = "Instagram",
+  range = "Instagram!A2:H70",
+  col_types = "cDtcnnnc") %>% 
+  fixDayDateTime()
+
+## standardize 'Graphic or Photo?' column
+# make new col
+fmt_i$g_or_p <- fmt_i$`Graphic or Photo?`
+unique(fmt_i$g_or_p)
+# stand. graphic
+indx <- grep("^graphic$", fmt_i$g_or_p, ignore.case = TRUE)
+fmt_i[indx, "g_or_p"] <- "Graphic"
+# stand. photo
+indx <- grep("^photo$|^Photos$", fmt_i$g_or_p, ignore.case = TRUE)
+fmt_i[indx, "g_or_p"] <- "Photo"
+# make 'Both' from photo and graphic
+patterns <- c("^Photo & graphic$", "^Photo and graphic$", 
+              "^Graphic and photo$", "^Graphic and phots$")
+indx <- grep(paste(patterns, collapse = "|"), fmt_i$g_or_p, ignore.case = TRUE)
+fmt_i[indx, "g_or_p"] <- "Both"
+# format Video graphic 
+indx <- grep("^Video graphic$", fmt_i$g_or_p, ignore.case = TRUE)
+fmt_i[indx, "g_or_p"] <- "Video Graphic"
+
+## make factor
+fmt_i$g_or_p_f <- factor(
+  fmt_i$g_or_p,
+  levels = c("Photo", "Graphic", "Both", "Video", "Video Graphic")
+)
+```
+
+Initial summary statistics.
+```{r}
+summary(fmt_i)
+```
+
+Looks like there is a missing 'Impressions', 'Engagements', 'Engagement rate', 'Time', and 'Graphic or Photo?.
+```{r}
+col_of_int <- c("Weekday", "usa_date", "ampm_time",  "Post", 
+                "Impressions", "Engagements",  "Enagement rate",
+                "Graphic or Photo?")
+# TODO: MISSING DATA
+fmt_i[is.na(fmt_i$`Enagement rate`), col_of_int]
+fmt_i[is.na(fmt_i$Engagements), col_of_int]
+fmt_i[is.na(fmt_i$Impressions), col_of_int]
+fmt_i[is.na(fmt_i$Time), col_of_int]
+fmt_i[is.na(fmt_i$`Graphic or Photo?`), col_of_int]
+```
+
+
+### Forward Montana Foundation
+Now the Forward Montana Foundation instagram...
+```{r}
+## import data
+fmtf_i <- read_sheet(
+  ss = "https://docs.google.com/spreadsheets/d/1dtmkJc1cTFrGrEF4c5AHsOcMwqBzveRHU4mI44oAgnc/edit#gid=1584951731",
+  sheet = "Instagram",
+  range = "Instagram!A84:H111",
+  col_types = "cDtcnnnc") %>% 
+  fixDayDateTime()
+
+## standardize 'Graphic or Photo?' column
+# make new col
+fmtf_i$g_or_p <- fmtf_i$`Graphic or Photo?`
+unique(fmtf_i$g_or_p)
+
+## make factor
+fmtf_i$g_or_p_f <- factor(
+  fmtf_i$g_or_p,
+  levels = c("Photo", "Graphic", "Both")
+)
+```
+
+Initial summary statistics.
+```{r}
+summary(fmtf_i)
+```
+
+Looks like there is a missing 'Engagements', 'Time', and 'Graphic or Photo?.
+```{r}
+col_of_int <- c("Weekday", "usa_date", "ampm_time",  "Post", 
+                "Impressions", "Engagements",  "Enagement rate",
+                "Graphic or Photo?")
+# TODO: MISSING DATA
+fmtf_i[is.na(fmtf_i$Engagements), col_of_int]
+fmtf_i[is.na(fmtf_i$`Graphic or Photo?`), col_of_int]
+
+## fill gap in Time
+fmtf_i[is.na(fmtf_i$Time), col_of_int]
+fmtf_i[is.na(fmtf_i$Time) & fmtf_i$usa_date == "05/31/2022", "ampm_time"] <- "11:45 AM"
+fmtf_i[is.na(fmtf_i$Time) & fmtf_i$usa_date == "05/31/2022", "hour"] <- "11 AM"
+fmtf_i[is.na(fmtf_i$Time) & fmtf_i$usa_date == "05/31/2022", "hour_f"] <- "11 AM"
+```
+
+
+```{r}
+fmt_i$Org <- "FMT"
+fmtf_i$Org <- "FMTF"
+insta <- rbind(fmt_i, fmtf_i)
+```
+
+## Facebook
+### Forward Montana
+```{r}
+## import data
+fmt_f <- read_sheet(
+  ss = "https://docs.google.com/spreadsheets/d/1dtmkJc1cTFrGrEF4c5AHsOcMwqBzveRHU4mI44oAgnc/edit#gid=1584951731",
+  sheet = "FB",
+  range = "FB!A2:H35",
+  col_types = "cDtcnnnc") %>% 
+  fixDayDateTime()
+
+## standardize 'Graphic or Photo?' column
+# make new col
+fmt_f$g_or_p <- fmt_f$`Graphic or Photo?`
+unique(fmt_f$g_or_p)
+# stand. photo
+indx <- grep("^photo$|^Photos$", fmt_f$g_or_p, ignore.case = TRUE)
+fmt_f[indx, "g_or_p"] <- "Photo"
+
+## make factor
+fmt_f$g_or_p_f <- factor(
+  fmt_f$g_or_p,
+  levels = c("Photo", "Graphic", "Both", "Video")
+)
+```
+
+Initial summary statistics.
+```{r}
+summary(fmt_f)
+```
+
+Looks like there is a missing 'Impressions, 'Engagements', and 'Engagement rate'.
+```{r}
+col_of_int <- c("Weekday", "usa_date", "ampm_time",  "Post", 
+                "Impressions", "Engagements",  "Enagement rate",
+                "Graphic or Photo?")
+# TODO: MISSING DATA
+fmt_f[is.na(fmt_f$Impressions), col_of_int]
+fmt_f[is.na(fmt_f$Engagements), col_of_int]
+fmt_f[is.na(fmt_f$`Enagement rate`), col_of_int]
+```
+
+### Forward Montana Foundation
+Now the Forward Montana Foundation FB.
+```{r}
+## import data
+fmtf_f <- read_sheet(
+  ss = "https://docs.google.com/spreadsheets/d/1dtmkJc1cTFrGrEF4c5AHsOcMwqBzveRHU4mI44oAgnc/edit#gid=1584951731",
+  sheet = "FB",
+  range = "FB!A44:H56",
+  col_types = "cDtcnnnc") %>% 
+  fixDayDateTime()
+
+names(fmtf_f)[5] <- "Impressions"
+
+## standardize 'Graphic or Photo?' column
+# make new col
+fmtf_f$g_or_p <- fmtf_f$`Graphic or Photo?`
+unique(fmtf_f$g_or_p)
+
+## make factor
+fmtf_f$g_or_p_f <- factor(
+  fmtf_f$g_or_p,
+  levels = c("Photo", "Graphic", "Both", "Video")
+)
+```
+
+Initial summary statistics.
+```{r}
+summary(fmtf_f)
+```
+
+Looks like there is a missing 'Graphic or Photo?'.
+```{r}
+col_of_int <- c("Weekday", "usa_date", "ampm_time",  "Post", 
+                "Impressions", "Engagements",  "Enagement rate",
+                "Graphic or Photo?")
+# TODO: MISSING DATA
+fmtf_f[is.na(fmtf_f$`Graphic or Photo?`), col_of_int]
+```
+
+```{r}
+fmt_f$Org <- "FMT"
+fmtf_f$Org <- "FMTF"
+fb <- rbind(fmt_f, fmtf_f)
+```
+
+
+## TikTok
+```{r}
+## import data
+tt <- read_sheet(
+  ss = "https://docs.google.com/spreadsheets/d/1dtmkJc1cTFrGrEF4c5AHsOcMwqBzveRHU4mI44oAgnc/edit#gid=1584951731",
+  sheet = "TikTok",
+  col_types = "cDtcnnn") %>% 
+  fixDayDateTime()
+```
+
+Initial summary statistics.
+```{r}
+summary(tt)
+```
+
+# Clean Up
+```{r}
+rm(indx, patterns, col_of_int, fmt_e, fmt_i, fmtf_i, fmt_f, fmtf_f)
+```
+
+# Email
+```{r}
+email
+```
+
+
+# Instagram
+```{r}
+insta
+```
+
+# Facebook
+```{r}
+fb
+```
+
+# TikTok
+```{r}
+tt
+```
+
