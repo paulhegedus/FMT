@@ -1,0 +1,84 @@
+---
+title: "FMT Comms Data Exploration"
+author: "Paul Hegedus"
+date: '2022-07-04'
+output: html_document
+---
+
+# Forward MT Communications Analysis Pt. II
+Analysis by communication type addressing the questions defined in the README file. Note that this document pertains to both Forward MT and Forward MT Foundation.
+
+# Set Up
+##### Packages and Functions
+```{r}
+library(tidyverse)
+library(googlesheets4)
+googlesheets4::gs4_auth("p.hegedus@comcast.net")
+source("gpath.R")
+source("fmt_fxns.R")
+```
+
+Make objects with HEX codes for FMT and FMTF colors
+```{r}
+fmt_hex <- c("#FF8A3D", "#8C9093")             # orange, gray
+fmtf_hex <- c("#06038D", "#489FDF", "#D6001C") # dark blue, light blue, red
+hex <- c(fmt_hex[1], fmtf_hex[1])
+```
+
+
+# Email
+Questions of interest are below. First some further processing.
+
+```{r}
+email
+email$day_hour <- paste(email$weekday_f, email$hour_f) %>% 
+  factor()
+```
+
+
+* What day of the week and time of day have the highest open rates, when accounting for recipients?
+
+First some initial figures about when emails are sent. 
+```{r}
+ggplot(email) +
+  geom_histogram(aes(x = weekday_f), stat = "count")
+ggplot(email) + 
+  geom_histogram(aes(x = month_f), stat = "count")
+```
+
+Now let's look at some metrics, like open rate by recipients.
+```{r}
+ggplot(email) + 
+  geom_point(aes(x = Recipients, y = `Open Rate`))
+```
+
+Initial linear model.
+```{r}
+m0 <- lm(`Open Rate` ~ Recipients + day_hour, data = email)
+anova(m0)
+plot(m0)
+summary(m0)
+```
+
+
+* What combination of day and time had highest open rates, when accounting for recipients?
+
+
+* How does frequency of emails in a week influence open rate?
+
+
+
+# Instagram
+```{r}
+insta
+```
+
+# Facebook
+```{r}
+fb
+```
+
+# TikTok
+```{r}
+tt
+```

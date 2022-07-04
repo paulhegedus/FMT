@@ -40,3 +40,4 @@ vignettes/*.pdf
 
 # ADDITIONS
 gpath.R
+prep_dat.RData
