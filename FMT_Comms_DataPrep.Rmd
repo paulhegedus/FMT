@@ -30,7 +30,8 @@ fmt_e <- read_sheet(
   sheet = "Email",
   range = "Email!A1:G68",
   col_types = "cDtcnnn") %>% 
-  fixDayDateTime()
+  fixDayDateTime() %>% 
+  calcFreq()
 ```
 
 Initial summary statistics.
@@ -38,12 +39,13 @@ Initial summary statistics.
 summary(fmt_e)
 ```
 
-Looks like there is missing data in 'Open Rate' & 'Time'.
+Looks like there is missing data in 'Open Rate' & 'Time'. And it looks like a decimal in the wrong spot for the January Newsletter email. Based on the other newsletter recipients, I assume the decimal point needs to be removed.
 ```{r}
 col_of_int <- c("Weekday", "usa_date", "ampm_time", 
                 "Email", "Recipients", "Open Rate")
 # TODO: MISSING DATA
 fmt_e[is.na(fmt_e$`Open Rate`), col_of_int]
+fmt_e[fmt_e$Email == "January Monthly Newsletter", "Recipients"] <- 7478
 ## fill gap in Time
 fmt_e[is.na(fmt_e$Time), col_of_int]
 fmt_e[is.na(fmt_e$Time), "ampm_time"] <- "03:30 PM"
@@ -67,7 +69,8 @@ fmt_i <- read_sheet(
   sheet = "Instagram",
   range = "Instagram!A2:H70",
   col_types = "cDtcnnnc") %>% 
-  fixDayDateTime()
+  fixDayDateTime() %>% 
+  calcFreq()
 
 ## standardize 'Graphic or Photo?' column
 # make new col
@@ -123,7 +126,8 @@ fmtf_i <- read_sheet(
   sheet = "Instagram",
   range = "Instagram!A84:H111",
   col_types = "cDtcnnnc") %>% 
-  fixDayDateTime()
+  fixDayDateTime() %>% 
+  calcFreq()
 
 ## standardize 'Graphic or Photo?' column
 # make new col
@@ -175,7 +179,8 @@ fmt_f <- read_sheet(
   sheet = "FB",
   range = "FB!A2:H35",
   col_types = "cDtcnnnc") %>% 
-  fixDayDateTime()
+  fixDayDateTime() %>% 
+  calcFreq()
 
 ## standardize 'Graphic or Photo?' column
 # make new col
@@ -217,7 +222,8 @@ fmtf_f <- read_sheet(
   sheet = "FB",
   range = "FB!A44:H56",
   col_types = "cDtcnnnc") %>% 
-  fixDayDateTime()
+  fixDayDateTime() %>% 
+  calcFreq()
 
 names(fmtf_f)[5] <- "Impressions"
 
@@ -262,7 +268,8 @@ tt <- read_sheet(
   ss = gpath,
   sheet = "TikTok",
   col_types = "cDtcnnn") %>% 
-  fixDayDateTime()
+  fixDayDateTime() %>% 
+  calcFreq()
 ```
 
 Initial summary statistics.
@@ -272,7 +279,7 @@ summary(tt)
 
 # Clean Up
 ```{r}
-rm(indx, patterns, col_of_int, fmt_e, fmt_i, fmtf_i, fmt_f, fmtf_f, gpath, fixDayDateTime)
+rm(indx, patterns, col_of_int, fmt_e, fmt_i, fmtf_i, fmt_f, fmtf_f, gpath, fixDayDateTime, calcFreq)
 ```
 
 # Save Data

@@ -1,0 +1,57 @@
+---
+title: "FMT_Comms_Analysis"
+author: "Paul Hegedus"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+Analysis to answer the questions about the FMT and FMTF communications data. Each question addressed in text and with an accompying figure out output below.
+
+# Setup
+Packages and Functions.
+```{r}
+options(na.action = "na.omit")
+library(tidyverse)
+library(googlesheets4)
+# googlesheets4::gs4_auth("p.hegedus@comcast.net")
+source("fmt_fxns.R")
+load("exp_dat.RData")
+```
+
+
+# Email
+
+The two highest emails with open rates, not accounting for recipients, were the "Progressive happy hour", and the "School board forum reminder" with 5 and 46 recipients, respectively. These were deemed outliers and removed from the analysis below.
+```{r}
+email[email$open_rate_pct > 40, 
+      c("Weekday", "usa_date", "ampm_time", "Email", "Recipients", "open_rate_pct")][1:2, ]
+```
+
+## Questions of Interest
+
+* What day of the week and time of day have the highest open rates, when accounting for recipients?
+* What combination of day and time had highest open rates, when accounting for recipients?
+* How does frequency of emails in a week influence open rate?
+
+First, what day of the week and time of day have the highest open rates, when accounting for recipients?
+
+```{r}
+
+```
+
+Second, what combination of day and time had highest open rates, when accounting for recipients?
+
+
+Third, how does frequency of emails in a week influence open rate?
+
+
+# Instagram
+
+* What day of the week and time of day have the highest engagement rate?
+* What combination of day and time had highest engagement rate?
+* Do graphics or photos have higher engagement rates?
+
+
+
+
+

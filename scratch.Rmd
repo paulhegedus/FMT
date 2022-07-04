@@ -1,0 +1,264 @@
+---
+title: "scratch"
+author: "Paul Hegedus"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# EMAIL SCRATCH
+
+
+## Modeling
+So what does affect open rates... Explored below. 
+
+
+Let's first create a simple linear model between the two variables. Looks like recipients does have a strong effect on the open rate. There is some heteroskedacity in the residuals vs. fitted and residuals are not normally distributed. Additionally, looks like point 15 is influential. Next, I'll take that outlier out.
+```{r}
+m0 <- lm(`Open Rate` ~ Recipients, data = email)
+summary(m0)
+plot(m0)
+```
+
+Point 15 taken out and same issues are occuring. Point 28 bordering on faulty. I'll try taking it out before moving on to transformations.
+```{r}
+email[is.na(email$`Open Rate`), "rm"] <- TRUE
+email[email$`Open Rate` == m0$model[15, "Open Rate"] & 
+        email$Recipients == m0$model[15, "Recipients"], "rm"] <- TRUE
+m1 <- lm(`Open Rate` ~ Recipients, data = email[!email$rm, ])
+summary(m1)
+plot(m1)
+```
+
+Everything looks a lot better. Next step is adding in some other potentially useful information.
+```{r}
+email[email$`Open Rate` == m0$model[28, "Open Rate"] & 
+        email$Recipients == m0$model[28, "Recipients"], "rm"] <- TRUE
+m2 <- lm(`Open Rate` ~ Recipients, data = email[!email$rm, ])
+summary(m2)
+plot(m2)
+```
+
+Going to add in the month and weekday and time of day. Things are still looking good.
+```{r}
+m3 <- lm(open_rate_pct ~ Recipients + month_f + weekday_f + hour_f, data = email[!email$rm, ])
+summary(m3)
+plot(m3)
+```
+
+So I'll look at the interaction between week and month and hour. Things look a little haywire but also have a really high R2 though that seems dubious. High leverages... Going to dredge to look at all possible models.
+```{r}
+m4 <- lm(open_rate_pct ~ Recipients + weekday_f + month_f * weekday_f * hour_f, data = email[!email$rm, ])
+summary(m4)
+car::Anova(m4, type = "II")
+plot(m4)
+```
+
+Now I'm going to dredge a model to find the best one. Looks like it is month and recipients.
+```{r}
+library(MuMIn)
+email_temp1 <- email[!email$rm, ]
+m5 <- lm(open_rate_pct ~ Recipients +  month_f * weekday_f * hour_f, data = email_temp1)
+options(na.action = "na.fail")
+dm <- dredge(m5, extra = c("R^2"))
+dm[dm$delta < 20, ]
+```
+
+Then I'll check to see how that lines up with a model including the outliers. The best model with outliers and the best model without outliers both only use month and recipients in the model. 
+```{r}
+email_temp2 <- email[!is.na(email$open_rate_pct), ]
+m6 <- lm(open_rate_pct ~ Recipients +  month_f * weekday_f * hour_f, data = email_temp2)
+options(na.action = "na.fail")
+dm <- dredge(m6, extra = c("R^2"))
+dm[dm$delta < 20, ]
+```
+
+Before fitting a final model, I'm going to look at a metric where the open rate is multiplied by the recipients/sum(recipients). This gives a metric of opens over sum(recipients) or the open rate across all recipients of all emails. This means that if an email that got sent out to 10 people and 5 opened it, this would have a lower weight than if an email that got sent to 1000 people had 500 open it. This balances the trend that open rate decreases with higher recipients, seen above.
+
+```{r}
+email$open_rate_weights <- (email$`Open Rate` * (email$Recipients / sum(email$Recipients))) * 100
+email$open_rate_adj <- email$open_rate_pct * email$open_rate_weights
+
+# first the original 
+ggplot(email[!email$rm, ]) + 
+ geom_point(aes(x = Recipients, 
+                y = open_rate_pct), 
+            color = fmt_hex[1]) +
+  geom_smooth(aes(x = Recipients, 
+                y = open_rate_pct), 
+              method = "lm", 
+              formula = y ~ x) + 
+  geom_smooth(aes(x = Recipients, 
+                y = open_rate_pct), 
+              color = "red", 
+              method = "gam",
+              formula = y ~ s(x, bs = "cs")) +
+  labs(x = "Number of Email Recipients", y = "Raw Open Rate (%)") + 
+  ggtitle("Opens / Recipients vs. Number of Recipients",
+          subtitle = "No weighting or adjustment.") +
+  scale_y_continuous(limits = c(0, 80), 
+                     labels = seq(0, 80, 10), 
+                     breaks = seq(0, 80, 10)) +
+  scale_x_continuous(limits = c(0, 8000), 
+                     labels = seq(0, 8000, 1000), 
+                     breaks = seq(0, 8000, 1000)) +
+  theme_bw()
+# now the weights
+ggplot(email[!email$rm, ]) + 
+ geom_point(aes(x = Recipients, 
+                y = open_rate_weights), 
+            color = fmt_hex[1]) +
+  geom_smooth(aes(x = Recipients, 
+                y = open_rate_weights), 
+              method = "lm", 
+              formula = y ~ x) + 
+  geom_smooth(aes(x = Recipients, 
+                y = open_rate_weights), 
+              color = "red", 
+              method = "gam",
+              formula = y ~ s(x, bs = "cs")) +
+  labs(x = "Number of Email Recipients", y = "Open Rate Weights (%)") + 
+  ggtitle("Opens / Sum of Recipients vs. Number of Recipients",
+          subtitle = "Weights to be applied to the open rate to adjust for recipients.") +
+  scale_y_continuous(limits = c(0, 1), 
+                     labels = seq(0, 1, 0.1), 
+                     breaks = seq(0, 1, 0.1)) +
+  scale_x_continuous(limits = c(0, 8000), 
+                     labels = seq(0, 8000, 1000), 
+                     breaks = seq(0, 8000, 1000)) +
+  theme_bw()
+```
+
+Now the adjusted data.
+```{r}
+ggplot(email[!email$rm, ]) + 
+ geom_point(aes(x = Recipients, 
+                y = open_rate_adj), 
+            color = fmt_hex[1]) +
+  geom_smooth(aes(x = Recipients, 
+                y = open_rate_adj), 
+              method = "lm", 
+              formula = y ~ x) + 
+  geom_smooth(aes(x = Recipients, 
+                y = open_rate_adj), 
+              color = "red", 
+              method = "gam",
+              formula = y ~ s(x, bs = "cs")) +
+  labs(x = "Number of Email Recipients", y = "Adjusted Open Rate (%)") + 
+  ggtitle("Opens / Recipients * Opens / Sum of Recipients vs. Number of Recipients",
+          subtitle = "The proportion of opens to total recipients used to adjust open rate to account for recipients") +
+  scale_y_continuous(limits = c(0, 50), 
+                     labels = seq(0, 50, 10), 
+                     breaks = seq(0, 50, 10)) +
+  scale_x_continuous(limits = c(0, 8000), 
+                     labels = seq(0, 8000, 1000), 
+                     breaks = seq(0, 8000, 1000)) +
+  theme_bw()
+```
+
+Dredging a model with this metric to compare to the raw values as response.
+```{r}
+email_temp1 <- email[!email$rm, ]
+m7 <- lm(open_rate_adj ~ Recipients +  month_f * weekday_f * hour_f, data = email_temp1)
+options(na.action = "na.fail")
+dm <- dredge(m7, extra = c("R^2"))
+dm[dm$delta < 50, ]
+```
+
+Without those outliers, using an adjustment simply adds in a relationship again.
+
+
+Now fitting the final model. First with the raw data using just recipients and month. 
+```{r}
+m7_raw <- lm(open_rate_pct ~ Recipients + month_f, data = email[!email$rm, ])
+summary(m7_raw)
+anova(m7_raw)
+car::Anova(m7_raw, type = "II")
+plot(m7_raw)
+```
+
+
+```{r}
+m7_adj <-  lm(open_rate_adj ~ Recipients + month_f * weekday_f, data = email[!email$rm, ])
+summary(m7_adj)
+anova(m7_adj)
+car::Anova(m7_adj, type = "II")
+plot(m7_adj)
+```
+
+Based on the modeling results. Going to use the raw data without the outliers for analysis. Now we can looks at the questions of interest below. 
+
+## ANOVA
+When is best day of week or time of day to post.
+```{r}
+# use email saved from exploration
+# fit best model with jsut weekday and time of day
+# mlm / hlm ?? month / weekday / hour
+# anova type II to assess weekday and time of day diffs
+# fit model with day and hour
+# mlm / hlm ?? with month / day and hour
+# anova type II to assess day and hour diffs
+
+# fit best model
+# look at coefficient for recipients
+# how does recipient influence open rate (for every one person increase in recipients open rate changes by ...)
+```
+
+
+# INSTA SCRATCH
+
+
+
+
+## ANOVA
+When is best day of week or time of day to post.
+```{r}
+# use insta saved from exploration
+# fit best model with jsut weekday and time of day
+# mlm / hlm ?? month / weekday / hour
+# anova type II to assess weekday and time of day diffs
+# fit model with day and hour
+# mlm / hlm ?? with month / day and hour
+# anova type II to assess day and hour diffs
+
+# fit best model
+# look at coefficient for recipients
+# how does recipient influence open rate (for every one person increase in recipients open rate changes by ...)
+```
+
+
+No difference between graphic or photo or both and photo. But photo has highest mean engagement.
+```{r}
+m0 <- lm(eng_rate_pct ~ g_or_p_f, data = insta)
+summary(m0)
+anova(m0)
+car::Anova(m0, type = "II")
+TukeyHSD(aov(m0))
+```
+
+## FB SCRATCH
+## ANOVA
+When is best day of week or time of day to post.
+```{r}
+# use insta saved from exploration
+# fit best model with jsut weekday and time of day
+# mlm / hlm ?? month / weekday / hour
+# anova type II to assess weekday and time of day diffs
+# fit model with day and hour
+# mlm / hlm ?? with month / day and hour
+# anova type II to assess day and hour diffs
+
+# fit best model
+# look at coefficient for recipients
+# how does recipient influence open rate (for every one person increase in recipients open rate changes by ...)
+```
+
+
+No difference between graphic or photo or both and photo. But photo has highest mean engagement.
+```{r}
+m0 <- lm(eng_rate_pct ~ g_or_p_f, data = fb)
+summary(m0)
+anova(m0)
+car::Anova(m0, type = "II")
+TukeyHSD(aov(m0))
+```
+

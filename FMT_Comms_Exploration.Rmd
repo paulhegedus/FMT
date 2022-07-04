@@ -9,13 +9,14 @@ output: html_document
 Analysis by communication type addressing the questions defined in the README file. Note that this document pertains to both Forward MT and Forward MT Foundation.
 
 # Set Up
-##### Packages and Functions
+Packages and Functions.
 ```{r}
+options(na.action = "na.omit")
 library(tidyverse)
 library(googlesheets4)
-googlesheets4::gs4_auth("p.hegedus@comcast.net")
-source("gpath.R")
+# googlesheets4::gs4_auth("p.hegedus@comcast.net")
 source("fmt_fxns.R")
+load("prep_dat.RData")
 ```
 
 Make objects with HEX codes for FMT and FMTF colors
@@ -27,58 +28,1192 @@ hex <- c(fmt_hex[1], fmtf_hex[1])
 
 
 # Email
-Questions of interest are below. First some further processing.
+```{r, echo = FALSE}
+# First some further processing.
+email <- as.data.frame(email)
+email$open_rate_pct <- email$`Open Rate` * 100
+email$rm <- FALSE
+```
 
+## Exploration
+Some initial exploration of the data. First, when are emails sent and then a dive into open rates and how other variables affect it.
+
+### Number of Emails
+Looks like the most emails have been sent in May and most emails are sent on Friday. And the most popular times to send emails are 10AM and 12PM.
+```{r, warning = FALSE, echo = FALSE}
+ggplot(email) + 
+  geom_histogram(aes(x = month_f), color = fmt_hex[1], fill = fmt_hex[1], stat = "count") +
+  labs(x = "Month", y = "Number of Emails Sent") + 
+  scale_y_continuous(limits = c(0, 25), labels = seq(0, 25, 5), breaks = seq(0, 25, 5)) +
+  theme_bw()
+
+ggplot(email) +
+  geom_histogram(aes(x = weekday_f), color = fmt_hex[1], fill = fmt_hex[1], stat = "count") +
+  labs(x = "Day", y = "Number of Emails Sent") + 
+  scale_y_continuous(limits = c(0, 20), labels = seq(0, 20, 2), breaks = seq(0, 20, 2)) +
+  theme_bw()
+
+ggplot(email) + 
+  geom_histogram(aes(x = hour_f), color = fmt_hex[1], fill = fmt_hex[1], stat = "count") +
+  labs(x = "Hour of Day", y = "Number of Emails Sent") + 
+  scale_y_continuous(limits = c(0, 25), labels = seq(0, 25, 5), breaks = seq(0, 25, 5)) +
+  theme_bw()
+```
+
+### Open Rates by Recipients
+There are definitely a couple emails with high open rates and a low amount of recipients. With those there appears to be a decrease in the open rate with an increasing amount of recipients.
+```{r, warning = FALSE, echo = FALSE}
+ggplot(email) + 
+  geom_point(aes(x = Recipients, y = open_rate_pct), color = fmt_hex[1]) +
+  labs(x = "Number of Email Recipients", y = "Open Rate (%)") + 
+  scale_y_continuous(limits = c(0, 100), labels = seq(0, 100, 10), breaks = seq(0, 100, 10)) +
+  scale_x_continuous(limits = c(0, 8000), labels = seq(0, 8000, 1000), breaks = seq(0, 8000, 1000)) +
+  theme_bw()
+```
+
+
+```{r, warning = F, echo = FALSE, eval = FALSE}
+# Looks like there is a slight relationship between open rate and recipients, based on a linear model between the two variables, where the shaded areas display the confidence interval around the smoothed line (blue). However, a generalized additive model appears to show an exponential decline. Likely influenced by the high open rate (red line).
+
+ggplot(email) + 
+ geom_point(aes(x = Recipients, 
+                y = open_rate_pct), 
+            color = fmt_hex[1]) +
+  geom_smooth(aes(x = Recipients, 
+                y = open_rate_pct), 
+              method = "lm", 
+              formula = y ~ x) + 
+  geom_smooth(aes(x = Recipients, 
+                y = open_rate_pct), 
+              color = "red", 
+              method = "gam",
+              formula = y ~ s(x, bs = "cs")) +
+  labs(x = "Number of Email Recipients", y = "Open Rate (%)") + 
+  scale_y_continuous(limits = c(0, 80), 
+                     labels = seq(0, 80, 10), 
+                     breaks = seq(0, 80, 10)) +
+  scale_x_continuous(limits = c(0, 8000), 
+                     labels = seq(0, 8000, 1000), 
+                     breaks = seq(0, 8000, 1000)) +
+  theme_bw()
+```
+
+Let's look at the high open rate emails, defined as those above a 40% open rate. These are the "Progressive happy hour" email with 5 recipeints and the "School board forum reminder" with 46 recipients.
+```{r, echo = FALSE}
+email[email$open_rate_pct > 40, 
+      c("Day", "usa_date", "ampm_time", "Email", "Recipients", "open_rate_pct")][1:2, ]
+```
+
+Let's look at the relationship between recipients and open rate without those observations. It's pretty flat indicating not too much of a relationship between open rates and recipients.
+```{r, warning = FALSE, echo = FALSE}
+email[email$open_rate_pct > 40 | is.na(email$open_rate_pct), "rm"] <- TRUE
+
+ggplot(email[!email$rm, ]) + 
+ geom_point(aes(x = Recipients, 
+                y = open_rate_pct), 
+            color = fmt_hex[1]) +
+  # geom_smooth(aes(x = Recipients, 
+  #               y = open_rate_pct), 
+  #             method = "lm", 
+  #             formula = y ~ x) + 
+  # geom_smooth(aes(x = Recipients, 
+  #               y = open_rate_pct), 
+  #             color = "red", 
+  #             method = "gam",
+  #             formula = y ~ s(x, bs = "cs")) +
+  labs(x = "Number of Email Recipients", y = "Open Rate (%)") + 
+  scale_y_continuous(limits = c(0, 40), 
+                     labels = seq(0, 40, 10), 
+                     breaks = seq(0, 40, 10)) +
+  scale_x_continuous(limits = c(0, 8000), 
+                     labels = seq(0, 8000, 1000), 
+                     breaks = seq(0, 8000, 1000)) +
+  theme_bw()
+```
+
+### Open Rates by Frequency of Email
+Now let's look at how the frequency of emails across months, days, and weeks affects open rates. Visuals made with and without outliers.
+
+Looks like there might be a slight decrease in the open rate as more emails are sent in a given month. Outliers don't affect this trend.
+```{r, warning = FALSE, echo = FALSE}
+ggplot(email) + 
+ # geom_boxplot(aes(x = month_freq, 
+ #                y = open_rate_pct,
+ #                fill = month_f)) +
+  geom_point(aes(x = month_freq, 
+                y = open_rate_pct,
+                color = month_f)) +
+  labs(x = "Number of Emails Sent Per Month", y = "Open Rate (%)", color = "Month") + 
+  scale_y_continuous(limits = c(0, 100), 
+                     labels = seq(0, 100, 10), 
+                     breaks = seq(0, 100, 10)) +
+  scale_x_continuous(limits = c(4, 26),
+                     labels = seq(4, 26, 2),
+                     breaks = seq(4, 26, 2)) +
+  theme_bw()
+ggplot(email) + 
+ geom_boxplot(aes(x = month_freq,
+                y = open_rate_pct,
+                fill = month_f)) +
+  # geom_point(aes(x = month_freq, 
+  #               y = open_rate_pct,
+  #               color = month_f)) +
+  labs(x = "Number of Emails Sent Per Month", y = "Open Rate (%)", fill = "Month") + 
+  scale_y_continuous(limits = c(0, 100), 
+                     labels = seq(0, 100, 10), 
+                     breaks = seq(0, 100, 10)) +
+  scale_x_continuous(limits = c(4, 26),
+                     labels = seq(4, 26, 2),
+                     breaks = seq(4, 26, 2)) +
+  theme_bw()
+ggplot(email[!email$rm, ]) + 
+ # geom_boxplot(aes(x = month_freq, 
+ #                y = open_rate_pct,
+ #                fill = month_f)) +
+  geom_point(aes(x = month_freq, 
+                y = open_rate_pct,
+                color = month_f)) +
+  labs(x = "Number of Emails Sent Per Month", y = "Open Rate (%)", color = "Month") + 
+  scale_y_continuous(limits = c(0, 40), 
+                     labels = seq(0, 40, 10), 
+                     breaks = seq(0, 40, 10)) +
+  scale_x_continuous(limits = c(4, 26),
+                     labels = seq(4, 26, 2),
+                     breaks = seq(4, 26, 2)) +
+  theme_bw()
+ggplot(email[!email$rm, ]) + 
+ geom_boxplot(aes(x = month_freq,
+                y = open_rate_pct,
+                fill = month_f)) +
+  # geom_point(aes(x = month_freq, 
+  #               y = open_rate_pct,
+  #               color = month_f)) +
+  labs(x = "Number of Emails Sent Per Month", y = "Open Rate (%)", fill = "Month") + 
+  scale_y_continuous(limits = c(0, 40), 
+                     labels = seq(0, 40, 10), 
+                     breaks = seq(0, 40, 10)) +
+  scale_x_continuous(limits = c(4, 26),
+                     labels = seq(4, 26, 2),
+                     breaks = seq(4, 26, 2)) +
+  theme_bw()
+```
+
+
+Looks like there might be a slight decrease in the open rate as more emails are sent in a given week. Outliers don't affect this trend.
+```{r, warning = FALSE, echo = FALSE}
+email$week_freq_f <- factor(email$week_freq)
+
+ggplot(email) + 
+ geom_point(aes(x = week_freq, 
+                y = open_rate_pct)) +
+  labs(x = "Number of Emails Sent Per Week", y = "Open Rate (%)") + 
+  scale_y_continuous(limits = c(0, 100), 
+                     labels = seq(0, 100, 10), 
+                     breaks = seq(0, 100, 10)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw()
+ggplot(email) + 
+ geom_boxplot(aes(x = week_freq_f, 
+                y = open_rate_pct)) +
+  labs(x = "Number of Emails Sent Per Week", y = "Open Rate (%)") + 
+  scale_y_continuous(limits = c(0, 100), 
+                     labels = seq(0, 100, 10), 
+                     breaks = seq(0, 100, 10)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw()
+ggplot(email[!email$rm, ]) + 
+ geom_point(aes(x = week_freq, 
+                y = open_rate_pct)) +
+  labs(x = "Number of Emails Sent Per Week", y = "Open Rate (%)") + 
+  scale_y_continuous(limits = c(0, 40), 
+                     labels = seq(0, 40, 10), 
+                     breaks = seq(0, 40, 10)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw()
+ggplot(email[!email$rm, ]) + 
+ geom_boxplot(aes(x = week_freq_f, 
+                y = open_rate_pct)) +
+  labs(x = "Number of Emails Sent Per Week", y = "Open Rate (%)") + 
+  scale_y_continuous(limits = c(0, 40), 
+                     labels = seq(0, 40, 10), 
+                     breaks = seq(0, 40, 10)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw()
+```
+
+
+Looks like there might be a slight decrease in the open rate as more emails are sent in a given day. Outliers don't affect this trend.
+```{r, warning = FALSE, echo = FALSE}
+email$day_freq_f <- factor(email$day_freq)
+
+ggplot(email) + 
+ geom_point(aes(x = day_freq, 
+                y = open_rate_pct)) +
+  labs(x = "Number of Emails Sent Per Day", y = "Open Rate (%)") + 
+  scale_y_continuous(limits = c(0, 100), 
+                     labels = seq(0, 100, 10), 
+                     breaks = seq(0, 100, 10)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw()
+ggplot(email) + 
+ geom_boxplot(aes(x = day_freq_f, 
+                y = open_rate_pct)) +
+  labs(x = "Number of Emails Sent Per Day", y = "Open Rate (%)") + 
+  scale_y_continuous(limits = c(0, 100), 
+                     labels = seq(0, 100, 10), 
+                     breaks = seq(0, 100, 10)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw()
+ggplot(email[!email$rm, ]) + 
+ geom_point(aes(x = day_freq, 
+                y = open_rate_pct)) +
+  labs(x = "Number of Emails Sent Per Day", y = "Open Rate (%)") + 
+  scale_y_continuous(limits = c(0, 40), 
+                     labels = seq(0, 40, 10), 
+                     breaks = seq(0, 40, 10)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw()
+ggplot(email[!email$rm, ]) + 
+ geom_boxplot(aes(x = day_freq_f, 
+                y = open_rate_pct)) +
+  labs(x = "Number of Emails Sent Per Day", y = "Open Rate (%)") + 
+  scale_y_continuous(limits = c(0, 40), 
+                     labels = seq(0, 40, 10), 
+                     breaks = seq(0, 40, 10)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw()
+```
+
+
+### Open Rates by Day & Hour
+First let's look at open rates by day and by hour separately. Looks like open rates are highest on Thursdays.
+
+```{r, echo = FALSE, warning = FALSE}
+ggplot(email) + 
+ geom_point(aes(x = weekday_f, 
+                y = open_rate_pct, 
+                color = month_f)) +
+  labs(x = "Day", y = "Open Rate (%)", color = "Month") + 
+  scale_y_continuous(limits = c(0, 100), 
+                     labels = seq(0, 100, 10), 
+                     breaks = seq(0, 100, 10)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90)) 
+  
+ggplot(email) + 
+ geom_boxplot(aes(x = weekday_f, 
+                y = open_rate_pct)) +
+  labs(x = "Day", y = "Open Rate (%)") + 
+  scale_y_continuous(limits = c(0, 100), 
+                     labels = seq(0, 100, 10), 
+                     breaks = seq(0, 100, 10)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90)) 
+
+ggplot(email[!email$rm, ]) + 
+ geom_point(aes(x = weekday_f, 
+                y = open_rate_pct,
+                color = month_f)) +
+  labs(x = "Day", y = "Open Rate (%)", color = "Month") + 
+  scale_y_continuous(limits = c(0, 40), 
+                     labels = seq(0, 40, 10), 
+                     breaks = seq(0, 40, 10)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90)) 
+  
+ggplot(email[!email$rm, ]) + 
+ geom_boxplot(aes(x = weekday_f, 
+                y = open_rate_pct)) +
+  labs(x = "Day", y = "Open Rate (%)") + 
+  scale_y_continuous(limits = c(0, 40), 
+                     labels = seq(0, 40, 10), 
+                     breaks = seq(0, 40, 10)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90)) 
+```
+
+Looking at the hour of day, 1PM or 5PM seems to have the highest open rates. 5PM is high because there are only two observations while 1PM has more consistently high open rates across all months and with more observations.
+```{r, echo = FALSE, warning = FALSE}
+ggplot(email) + 
+ geom_point(aes(x = hour_f, 
+                y = open_rate_pct, 
+                color = month_f)) +
+  labs(x = "Day", y = "Open Rate (%)", color = "Month") + 
+  scale_y_continuous(limits = c(0, 100), 
+                     labels = seq(0, 100, 10), 
+                     breaks = seq(0, 100, 10)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90)) 
+  
+ggplot(email) + 
+ geom_boxplot(aes(x = hour_f, 
+                y = open_rate_pct)) +
+  labs(x = "Day", y = "Open Rate (%)") + 
+  scale_y_continuous(limits = c(0, 100), 
+                     labels = seq(0, 100, 10), 
+                     breaks = seq(0, 100, 10)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90)) 
+
+ggplot(email[!email$rm, ]) + 
+ geom_point(aes(x = hour_f, 
+                y = open_rate_pct,
+                color = month_f)) +
+  labs(x = "Day", y = "Open Rate (%)", color = "Month") + 
+  scale_y_continuous(limits = c(0, 40), 
+                     labels = seq(0, 40, 10), 
+                     breaks = seq(0, 40, 10)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90)) 
+  
+ggplot(email[!email$rm, ]) + 
+ geom_boxplot(aes(x = hour_f, 
+                y = open_rate_pct)) +
+  labs(x = "Day", y = "Open Rate (%)") + 
+  scale_y_continuous(limits = c(0, 40), 
+                     labels = seq(0, 40, 10), 
+                     breaks = seq(0, 40, 10)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90)) 
+```
+
+
+Now let's look at open rates by the day and hour combination (e.g. Thursday 12PM). Looks like without outliers, the highest open rates occured when an email is sent between Thursday at 1PM and Thursday at 5PM, followed by Friday at 5PM. Though note that there is only one observation at each of those day/hour combinations.
+```{r, echo = FALSE, warning = FALSE}
+ggplot(email) + 
+ geom_point(aes(x = day_hour, 
+                y = open_rate_pct,
+                color = month_f)) +
+  labs(x = "Day and Hour", y = "Open Rate (%)", color = "Month") + 
+  scale_y_continuous(limits = c(0, 100), 
+                     labels = seq(0, 100, 10), 
+                     breaks = seq(0, 100, 10)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90)) 
+  
+ggplot(email) + 
+ geom_boxplot(aes(x = day_hour, 
+                y = open_rate_pct)) +
+  labs(x = "Day and Hour", y = "Open Rate (%)") + 
+  scale_y_continuous(limits = c(0, 100), 
+                     labels = seq(0, 100, 10), 
+                     breaks = seq(0, 100, 10)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90)) 
+
+ggplot(email[!email$rm, ]) + 
+ geom_point(aes(x = day_hour, 
+                y = open_rate_pct,
+                color = month_f)) +
+  labs(x = "Day and Hour", y = "Open Rate (%)", color = "Month") + 
+  scale_y_continuous(limits = c(0, 40), 
+                     labels = seq(0, 40, 10), 
+                     breaks = seq(0, 40, 10)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90)) 
+  
+ggplot(email[!email$rm, ]) + 
+ geom_boxplot(aes(x = day_hour, 
+                y = open_rate_pct)) +
+  labs(x = "Day and Hour", y = "Open Rate (%)") + 
+  scale_y_continuous(limits = c(0, 40), 
+                     labels = seq(0, 40, 10), 
+                     breaks = seq(0, 40, 10)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90)) 
+```
+
+## Prep for Saving Data
 ```{r}
 email
-email$day_hour <- paste(email$weekday_f, email$hour_f) %>% 
-  factor()
 ```
-
-
-* What day of the week and time of day have the highest open rates, when accounting for recipients?
-
-First some initial figures about when emails are sent. 
-```{r}
-ggplot(email) +
-  geom_histogram(aes(x = weekday_f), stat = "count")
-ggplot(email) + 
-  geom_histogram(aes(x = month_f), stat = "count")
-```
-
-Now let's look at some metrics, like open rate by recipients.
-```{r}
-ggplot(email) + 
-  geom_point(aes(x = Recipients, y = `Open Rate`))
-```
-
-Initial linear model.
-```{r}
-m0 <- lm(`Open Rate` ~ Recipients + day_hour, data = email)
-anova(m0)
-plot(m0)
-summary(m0)
-```
-
-
-* What combination of day and time had highest open rates, when accounting for recipients?
-
-
-* How does frequency of emails in a week influence open rate?
 
 
 
 # Instagram
+Some initial exploration of the data. First, when are instagrams are posted and then a dive into impressions and engagement rates and how other variables affect it.
+
+```{r, echo = FALSE}
+## initial processing
+# First some further processing.
+insta <- as.data.frame(insta)
+insta$eng_rate_pct <- insta$`Enagement rate` * 100
+insta$rm <- FALSE
+insta[is.na(insta$ampm_time), "rm"] <- TRUE
+```
+
+### Number of Posts
+Looks like the most instas have been posted in April for FMT and May for FMT Foundation. Most FMT instas are posted on Friday while most FMT Foundation instas are posted on Monday. Most instagram posts across both organizations occur between 12pm and 1pm.
+```{r, warning = FALSE, echo = FALSE}
+ggplot(insta) + 
+  geom_histogram(aes(x = month_f, fill = Org, color = Org), stat = "count") +
+  scale_fill_manual(name = "Organization", values = hex) + 
+  scale_color_manual(name = "Organization", values = hex) +
+  labs(x = "Month", y = "Number of Instagram Posts") + 
+  scale_y_continuous(limits = c(0, 25), labels = seq(0, 25, 5), breaks = seq(0, 25, 5)) +
+  theme_bw()
+
+ggplot(insta) +
+  geom_histogram(aes(x = weekday_f, fill = Org, color = Org), stat = "count") +
+  scale_fill_manual(name = "Organization", values = hex) + 
+  scale_color_manual(name = "Organization", values = hex) +
+  labs(x = "Day", y = "Number of Instagram Posts") + 
+  scale_y_continuous(limits = c(0, 20), labels = seq(0, 20, 2), breaks = seq(0, 20, 2)) +
+  theme_bw()
+
+ggplot(insta[!insta$rm, ]) + 
+  geom_histogram(aes(x = hour_f, fill = Org, color = Org), stat = "count") +
+  scale_fill_manual(name = "Organization", values = hex) + 
+  scale_color_manual(name = "Organization", values = hex) +
+  labs(x = "Hour of Day", y = "Number of Instagram Posts") + 
+  scale_y_continuous(limits = c(0, 20), labels = seq(0, 20, 2), breaks = seq(0, 20, 2)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45))
+```
+
+### Engagement Rates by Graphic or Photo
+Removing the videos and NA. It appears as if the engagement rate is lower for graphics or graphic and photos compared to just photos.
+```{r, warning = FALSE, echo = FALSE}
+insta[grep("Video", insta$g_or_p), "rm"] <- TRUE
+insta[is.na(insta$g_or_p), "rm"] <- TRUE
+ggplot(insta[!insta$rm, ]) + 
+  geom_boxplot(aes(x = g_or_p_f, y = eng_rate_pct, fill = Org)) +
+  scale_fill_manual(name = "Organization", values = hex) + 
+  labs(x = "", y = "Engagement Rate (%)") + 
+  scale_y_continuous(limits = c(0, 30), labels = seq(0, 30, 5), breaks = seq(0, 30, 5)) +
+  theme_bw()
+```
+
+
+### Engagement Rates by Frequency of Posts
+Now let's look at how the frequency of instas across months, days, and weeks affects open rates. 
+
+Looks like there is a decrease in engagement for both organizations as the frequency of posts increases per month.
+```{r, warning = FALSE, echo = FALSE}
+insta$month_freq_f <- factor(insta$month_freq)
+ggplot(insta[!insta$rm, ]) + 
+  geom_point(aes(x = month_freq_f, 
+                y = eng_rate_pct,
+                color = Org)) +
+  scale_color_manual(name = "Organization", values = hex) + 
+  labs(x = "Number of Posts Per Month", y = "Engagement Rate (%)") + 
+  scale_y_continuous(limits = c(0, 30),
+                     labels = seq(0, 30, 5),
+                     breaks = seq(0, 30, 5)) +
+  theme_bw()
+ggplot(insta[!insta$rm, ]) + 
+ geom_boxplot(aes(x = month_freq_f,
+                y = eng_rate_pct,
+                fill = Org)) +
+  scale_fill_manual(name = "Organization", values = hex) + 
+  labs(x = "Number of Posts Per Month", y = "Engagement Rate (%)") + 
+  scale_y_continuous(limits = c(0, 30),
+                     labels = seq(0, 30, 5),
+                     breaks = seq(0, 30, 5)) +
+  theme_bw()
+```
+
+
+Again, across both organizations, engagement rate decreases with the number of posts per week.
+```{r, warning = FALSE, echo = FALSE}
+insta$week_freq_f <- factor(insta$week_freq)
+
+ggplot(insta[!insta$rm, ]) + 
+  geom_point(aes(x = week_freq_f, 
+                y = eng_rate_pct,
+                color = Org)) +
+  scale_color_manual(name = "Organization", values = hex) + 
+  labs(x = "Number of Posts Per Week", y = "Engagement Rate (%)") + 
+  scale_y_continuous(limits = c(0, 30),
+                     labels = seq(0, 30, 5),
+                     breaks = seq(0, 30, 5)) +
+  theme_bw()
+ggplot(insta[!insta$rm, ]) + 
+ geom_boxplot(aes(x = week_freq_f,
+                y = eng_rate_pct,
+                fill = Org)) +
+  scale_fill_manual(name = "Organization", values = hex) + 
+  labs(x = "Number of Posts Per Week", y = "Engagement Rate (%)") + 
+  scale_y_continuous(limits = c(0, 30),
+                     labels = seq(0, 30, 5),
+                     breaks = seq(0, 30, 5)) +
+  theme_bw()
+```
+
+
+FMT Foundation has only ever posted once per day, so can't make any conclusions. However, there does appear to be a significantly lower engagement rate when FMT posts more than 3 times per day.
+```{r, warning = FALSE, echo = FALSE}
+insta$day_freq_f <- factor(insta$day_freq)
+
+ggplot(insta[!insta$rm, ]) + 
+  geom_point(aes(x = day_freq_f, 
+                y = eng_rate_pct,
+                color = Org)) +
+  scale_color_manual(name = "Organization", values = hex) + 
+  labs(x = "Number of Posts Per Day", y = "Engagement Rate (%)") + 
+  scale_y_continuous(limits = c(0, 30),
+                     labels = seq(0, 30, 5),
+                     breaks = seq(0, 30, 5)) +
+  theme_bw()
+ggplot(insta[!insta$rm, ]) + 
+ geom_boxplot(aes(x = day_freq_f,
+                y = eng_rate_pct,
+                fill = Org)) +
+  scale_fill_manual(name = "Organization", values = hex) + 
+  labs(x = "Number of Posts Per Day", y = "Engagement Rate (%)") + 
+  scale_y_continuous(limits = c(0, 30),
+                     labels = seq(0, 30, 5),
+                     breaks = seq(0, 30, 5)) +
+  theme_bw()
+```
+
+
+### Engagement Rates by Day & Hour
+First let's look at engagement rates by day and by hour separately. Looks like engagement rates are highest on Thursdays for FMT and Monday for FMT Foundation.
+
+```{r, echo = FALSE, warning = FALSE}
+ggplot(insta[!insta$rm, ]) + 
+ geom_point(aes(x = weekday_f, 
+                y = eng_rate_pct,
+                color = Org)) +
+  scale_color_manual(name = "Organization", values = hex) + 
+  labs(x = "Day", y = "Engagement Rate (%)") + 
+  scale_y_continuous(limits = c(0, 30), 
+                     labels = seq(0, 30, 5), 
+                     breaks = seq(0, 30, 5)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90)) 
+  
+ggplot(insta[!insta$rm, ]) + 
+ geom_boxplot(aes(x = weekday_f, 
+                y = eng_rate_pct,
+                fill = Org)) +
+  scale_fill_manual(name = "Organization", values = hex) + 
+  labs(x = "Day", y = "Engagement Rate (%)") + 
+  scale_y_continuous(limits = c(0, 30), 
+                     labels = seq(0, 30, 5), 
+                     breaks = seq(0, 30, 5)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90)) 
+```
+
+Looking at the hour of day, 5PM has the highest engagement rate for FMT and 2PM has the highest engagement for FMT Foundation.
+```{r, echo = FALSE, warning = FALSE}
+ggplot(insta[!insta$rm, ]) + 
+ geom_point(aes(x = hour_f, 
+                y = eng_rate_pct,
+                color = Org)) +
+  scale_color_manual(name = "Organization", values = hex) + 
+  labs(x = "Hour", y = "Engagement Rate (%)") + 
+  scale_y_continuous(limits = c(0, 30), 
+                     labels = seq(0, 30, 5), 
+                     breaks = seq(0, 30, 5)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90)) 
+  
+ggplot(insta[!insta$rm, ]) + 
+ geom_boxplot(aes(x = hour_f, 
+                y = eng_rate_pct,
+                fill = Org)) +
+  scale_fill_manual(name = "Organization", values = hex) + 
+  labs(x = "Hour", y = "Engagement Rate (%)") + 
+  scale_y_continuous(limits = c(0, 30), 
+                     labels = seq(0, 30, 5), 
+                     breaks = seq(0, 30, 5)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90)) 
+```
+
+
+Now let's look at engagement rates by the day and hour combination (e.g. Thursday 12PM). There is not really any clear trend with the combination of day and hour, likely due to limited data.
+```{r, echo = FALSE, warning = FALSE}
+ggplot(insta[!insta$rm, ]) + 
+ geom_point(aes(x = day_hour, 
+                y = eng_rate_pct,
+                color = Org)) +
+  scale_color_manual(name = "Organization", values = hex) + 
+  labs(x = "Day and Hour", y = "Engagement Rate (%)") + 
+  scale_y_continuous(limits = c(0, 30), 
+                     labels = seq(0, 30, 5), 
+                     breaks = seq(0, 30, 5)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90)) 
+  
+ggplot(insta[!insta$rm, ]) + 
+ geom_boxplot(aes(x = day_hour, 
+                y = eng_rate_pct,
+                fill = Org)) +
+  scale_fill_manual(name = "Organization", values = hex) + 
+  labs(x = "Day and Hour", y = "Engagement Rate (%)") + 
+  scale_y_continuous(limits = c(0, 30), 
+                     labels = seq(0, 30, 5), 
+                     breaks = seq(0, 30, 5)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90)) 
+```
+
+## Prep for Saving Data
 ```{r}
 insta
 ```
 
+
 # Facebook
+Some initial exploration of the data. First, when are Facebook posts are posted and then a dive into impressions and engagement rates and how other variables affect it.
+
+```{r, echo = FALSE}
+## initial processing
+# First some further processing.
+fb <- as.data.frame(fb)
+fb$eng_rate_pct <- fb$`Enagement rate` * 100
+fb$rm <- FALSE
+fb[is.na(fb$ampm_time), "rm"] <- TRUE
+```
+
+### Number of Posts
+Looks like the most facbook posts have been posted in February and March for FMT and February and april for FMT Foundation. Most facebook postss are posted on Friday across both organizations. FMT posted the most to facebook at 2pm while FMT Foundation posted the most at 9am and 1pm.
+```{r, warning = FALSE, echo = FALSE}
+ggplot(fb) + 
+  geom_histogram(aes(x = month_f, fill = Org, color = Org), stat = "count") +
+  scale_fill_manual(name = "Organization", values = hex) + 
+  scale_color_manual(name = "Organization", values = hex) +
+  labs(x = "Month", y = "Number of Facebook Posts") + 
+  scale_y_continuous(limits = c(0, 15), labels = seq(0, 15, 3), breaks = seq(0, 15, 3)) +
+  theme_bw()
+
+ggplot(fb) +
+  geom_histogram(aes(x = weekday_f, fill = Org, color = Org), stat = "count") +
+  scale_fill_manual(name = "Organization", values = hex) + 
+  scale_color_manual(name = "Organization", values = hex) +
+  labs(x = "Day", y = "Number of Facebook Posts") + 
+  scale_y_continuous(limits = c(0, 15), labels = seq(0, 15, 3), breaks = seq(0, 15, 3)) +
+  theme_bw()
+
+ggplot(fb[!fb$rm, ]) + 
+  geom_histogram(aes(x = hour_f, fill = Org, color = Org), stat = "count") +
+  scale_fill_manual(name = "Organization", values = hex) + 
+  scale_color_manual(name = "Organization", values = hex) +
+  labs(x = "Hour of Day", y = "Number of Facebook Posts") + 
+  scale_y_continuous(limits = c(0, 15), labels = seq(0, 15, 3), breaks = seq(0, 15, 3)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45))
+```
+
+### Engagement Rates by Graphic or Photo
+Removing the videos and NA. It appears as if the engagement rate is lower for graphics or graphic and photos compared to just photos.
+```{r, warning = FALSE, echo = FALSE}
+fb[grep("Video", fb$g_or_p), "rm"] <- TRUE
+fb[is.na(fb$g_or_p), "rm"] <- TRUE
+ggplot(fb[!fb$rm, ]) + 
+  geom_boxplot(aes(x = g_or_p_f, y = eng_rate_pct, fill = Org)) +
+  scale_fill_manual(name = "Organization", values = hex) + 
+  labs(x = "", y = "Engagement Rate (%)") + 
+  scale_y_continuous(limits = c(0, 12), labels = seq(0, 12, 2), breaks = seq(0, 12, 2)) +
+  theme_bw()
+```
+
+
+### Engagement Rates by Frequency of Posts
+Now let's look at how the frequency of instas across months, days, and weeks affects open rates. 
+
+Looks like there the highest engagement on facebook is between 4 and 5 posts per month.
+```{r, warning = FALSE, echo = FALSE}
+fb$month_freq_f <- factor(fb$month_freq)
+ggplot(fb[!fb$rm, ]) + 
+  geom_point(aes(x = month_freq_f, 
+                y = eng_rate_pct,
+                color = Org)) +
+  scale_color_manual(name = "Organization", values = hex) + 
+  labs(x = "Number of Posts Per Month", y = "Engagement Rate (%)") + 
+  scale_y_continuous(limits = c(0, 15),
+                     labels = seq(0, 15, 3),
+                     breaks = seq(0, 15, 3)) +
+  theme_bw()
+ggplot(fb[!fb$rm, ]) + 
+ geom_boxplot(aes(x = month_freq_f,
+                y = eng_rate_pct,
+                fill = Org)) +
+  scale_fill_manual(name = "Organization", values = hex) + 
+  labs(x = "Number of Posts Per Month", y = "Engagement Rate (%)") + 
+  scale_y_continuous(limits = c(0, 15),
+                     labels = seq(0, 15, 3),
+                     breaks = seq(0, 15, 3)) +
+  theme_bw()
+```
+
+
+Again, across both organizations, engagement rate decreases above 2 posts per week on facebook.
+```{r, warning = FALSE, echo = FALSE}
+fb$week_freq_f <- factor(fb$week_freq)
+
+ggplot(fb[!fb$rm, ]) + 
+  geom_point(aes(x = week_freq_f, 
+                y = eng_rate_pct,
+                color = Org)) +
+  scale_color_manual(name = "Organization", values = hex) + 
+  labs(x = "Number of Posts Per Week", y = "Engagement Rate (%)") + 
+  scale_y_continuous(limits = c(0, 15),
+                     labels = seq(0, 15, 3),
+                     breaks = seq(0, 15, 3)) +
+  theme_bw()
+ggplot(fb[!fb$rm, ]) + 
+ geom_boxplot(aes(x = week_freq_f,
+                y = eng_rate_pct,
+                fill = Org)) +
+  scale_fill_manual(name = "Organization", values = hex) + 
+  labs(x = "Number of Posts Per Week", y = "Engagement Rate (%)") + 
+  scale_y_continuous(limits = c(0, 15),
+                     labels = seq(0, 15, 3),
+                     breaks = seq(0, 15, 3)) +
+  theme_bw()
+```
+
+
+FMT Foundation has only ever posted once per day, so can't make any conclusions. However, the average engagement rate is lower with 2 faceboook posts per day compared to 1 facebook post per day from FMT.
+```{r, warning = FALSE, echo = FALSE}
+fb$day_freq_f <- factor(fb$day_freq)
+
+ggplot(fb[!fb$rm, ]) + 
+  geom_point(aes(x = day_freq_f, 
+                y = eng_rate_pct,
+                color = Org)) +
+  scale_color_manual(name = "Organization", values = hex) + 
+  labs(x = "Number of Posts Per Day", y = "Engagement Rate (%)") + 
+  scale_y_continuous(limits = c(0, 15),
+                     labels = seq(0, 15, 3),
+                     breaks = seq(0, 15, 3)) +
+  theme_bw()
+ggplot(fb[!fb$rm, ]) + 
+ geom_boxplot(aes(x = day_freq_f,
+                y = eng_rate_pct,
+                fill = Org)) +
+  scale_fill_manual(name = "Organization", values = hex) + 
+  labs(x = "Number of Posts Per Day", y = "Engagement Rate (%)") + 
+  scale_y_continuous(limits = c(0, 15),
+                     labels = seq(0, 15, 3),
+                     breaks = seq(0, 15, 3)) +
+  theme_bw()
+```
+
+
+### Engagement Rates by Day & Hour
+First let's look at engagement rates by day and by hour separately. Looks like engagement rates are highest on Tuesdays for both organizations, though limited data.
+
+```{r, echo = FALSE, warning = FALSE}
+ggplot(fb[!fb$rm, ]) + 
+ geom_point(aes(x = weekday_f, 
+                y = eng_rate_pct,
+                color = Org)) +
+  scale_color_manual(name = "Organization", values = hex) + 
+  labs(x = "Day", y = "Engagement Rate (%)") + 
+  scale_y_continuous(limits = c(0, 15), 
+                     labels = seq(0, 15, 3), 
+                     breaks = seq(0, 15, 3)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90)) 
+  
+ggplot(fb[!fb$rm, ]) + 
+ geom_boxplot(aes(x = weekday_f, 
+                y = eng_rate_pct,
+                fill = Org)) +
+  scale_fill_manual(name = "Organization", values = hex) + 
+  labs(x = "Day", y = "Engagement Rate (%)") + 
+  scale_y_continuous(limits = c(0, 15), 
+                     labels = seq(0, 15, 3), 
+                     breaks = seq(0, 15, 3)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90)) 
+```
+
+Looking at the hour of day, 1PM has the highest engagement rates for both organizations.
+```{r, echo = FALSE, warning = FALSE}
+ggplot(fb[!fb$rm, ]) + 
+ geom_point(aes(x = hour_f, 
+                y = eng_rate_pct,
+                color = Org)) +
+  scale_color_manual(name = "Organization", values = hex) + 
+  labs(x = "Hour", y = "Engagement Rate (%)") + 
+  scale_y_continuous(limits = c(0, 15), 
+                     labels = seq(0, 15, 3), 
+                     breaks = seq(0, 15, 3)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90)) 
+  
+ggplot(fb[!fb$rm, ]) + 
+ geom_boxplot(aes(x = hour_f, 
+                y = eng_rate_pct,
+                fill = Org)) +
+  scale_fill_manual(name = "Organization", values = hex) + 
+  labs(x = "Hour", y = "Engagement Rate (%)") + 
+  scale_y_continuous(limits = c(0, 15), 
+                     labels = seq(0, 15, 3), 
+                     breaks = seq(0, 15, 3)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90)) 
+```
+
+
+Looks like for both organizations, posting on Facebook on Tuesday at 1PM has the highest engagement rate. Friday at 4PM appears to be the second best time. 
+```{r, echo = FALSE, warning = FALSE}
+ggplot(fb[!fb$rm, ]) + 
+ geom_point(aes(x = day_hour, 
+                y = eng_rate_pct,
+                color = Org)) +
+  scale_color_manual(name = "Organization", values = hex) + 
+  labs(x = "Day and Hour", y = "Engagement Rate (%)") + 
+  scale_y_continuous(limits = c(0, 15), 
+                     labels = seq(0, 15, 3), 
+                     breaks = seq(0, 15, 3)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90)) 
+  
+ggplot(fb[!fb$rm, ]) + 
+ geom_boxplot(aes(x = day_hour, 
+                y = eng_rate_pct,
+                fill = Org)) +
+  scale_fill_manual(name = "Organization", values = hex) + 
+  labs(x = "Day and Hour", y = "Engagement Rate (%)") + 
+  scale_y_continuous(limits = c(0, 15), 
+                     labels = seq(0, 15, 3), 
+                     breaks = seq(0, 15, 3)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90)) 
+```
+
+## Prep for Saving Data
 ```{r}
 fb
 ```
 
+
+
 # TikTok
+```{r, echo = FALSE}
+# First some further processing.
+tt <- as.data.frame(tt)
+tt$like_pct <- tt$`Likes per plays` * 100
+tt$rm <- FALSE
+```
+
+## Exploration
+Some initial exploration of the data. First, when are TikToks are posted and then a dive into likes per plays.
+
+### Number of TikToks
+Looks like the most tiktoks have been posted in June and most tiktoks are posted on Wed. and Friday. And the most popular times to post tiktok is 3pm.
+```{r, warning = FALSE, echo = FALSE}
+ggplot(tt) + 
+  geom_histogram(aes(x = month_f), color = fmt_hex[1], fill = fmt_hex[1], stat = "count") +
+  labs(x = "Month", y = "Number of TikToks Posted") + 
+  scale_y_continuous(limits = c(0, 7), labels = seq(0, 7, 1), breaks = seq(0, 7, 1)) +
+  theme_bw()
+
+ggplot(tt) +
+  geom_histogram(aes(x = weekday_f), color = fmt_hex[1], fill = fmt_hex[1], stat = "count") +
+  labs(x = "Day", y = "Number of TikToks Posted") + 
+  scale_y_continuous(limits = c(0, 5), labels = seq(0, 5, 1), breaks = seq(0, 5, 1)) +
+  theme_bw()
+
+ggplot(tt) + 
+  geom_histogram(aes(x = hour_f), color = fmt_hex[1], fill = fmt_hex[1], stat = "count") +
+  labs(x = "Hour of Day", y = "Number of TikToks Posted") + 
+  scale_y_continuous(limits = c(0, 5), labels = seq(0, 5, 1), breaks = seq(0, 5, 1)) +
+  theme_bw()
+```
+
+### Like Percent by Plays
+There are definitely a couple emails with high open rates and a low amount of recipients. With those there appears to be a decrease in the open rate with an increasing amount of recipients.
+```{r, warning = FALSE, echo = FALSE}
+ggplot(tt) + 
+  geom_point(aes(x = `Views/Plays`, y = like_pct), color = fmt_hex[1]) +
+  labs(x = "Number of Plays", y = "Likes Per Plays (%)") + 
+  scale_y_continuous(limits = c(0, 15), labels = seq(0, 15, 1), breaks = seq(0, 15, 1)) +
+  scale_x_continuous(limits = c(0, 8000), labels = seq(0, 8000, 1000), breaks = seq(0, 8000, 1000)) +
+  theme_bw()
+```
+
+
+### Like Percent by Frequency of TikTok
+Now let's look at how the frequency of tiktoks across months, days, and weeks affects like rates.
+
+Looks like there is no relationship between tiktoks per month and like percent.
+```{r, warning = FALSE, echo = FALSE}
+ggplot(tt) + 
+ # geom_boxplot(aes(x = month_freq, 
+ #                y = like_pct,
+ #                fill = month_f)) +
+  geom_point(aes(x = month_freq, 
+                y = like_pct,
+                color = month_f)) +
+  labs(x = "Number of TikToks per Month", y = "Likes Per Plays (%)", color = "Month") + 
+  scale_y_continuous(limits = c(0, 15), 
+                     labels = seq(0, 15, 1), 
+                     breaks = seq(0, 15, 1)) +
+  scale_x_continuous(limits = c(1, 6),
+                     labels = seq(1, 6, 1),
+                     breaks = seq(1, 6, 1)) +
+  theme_bw()
+ggplot(tt) + 
+ geom_boxplot(aes(x = month_freq,
+                y = like_pct,
+                fill = month_f)) +
+  labs(x = "Number of TikToks per Month", y = "Likes Per Plays (%)", fill = "Month") + 
+  scale_y_continuous(limits = c(0, 15), 
+                     labels = seq(0, 15, 1), 
+                     breaks = seq(0, 15, 1)) +
+  scale_x_continuous(limits = c(0, 7),
+                     labels = seq(0, 7, 1),
+                     breaks = seq(0, 7, 1)) +
+  theme_bw()
+```
+
+
+Looks like there might be a slight increase in the like percent rate as more tiktoks are posted per week.
+```{r, warning = FALSE, echo = FALSE}
+tt$week_freq_f <- factor(tt$week_freq)
+
+ggplot(tt) + 
+ geom_point(aes(x = week_freq_f, 
+                y = like_pct)) +
+  labs(x = "Number of TikToks Per Week", y = "Likes Per Plays (%)") + 
+  scale_y_continuous(limits = c(0, 15), 
+                     labels = seq(0, 15, 1), 
+                     breaks = seq(0, 15, 1)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw()
+ggplot(tt) + 
+ geom_boxplot(aes(x = week_freq_f, 
+                y = like_pct)) +
+  labs(x = "Number of TikToks Per Week", y = "Likes Per Plays (%)") + 
+  scale_y_continuous(limits = c(0, 15), 
+                     labels = seq(0, 15, 1), 
+                     breaks = seq(0, 15, 1)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw()
+```
+
+
+Only one tiktok has ever been posted in a given day.
+```{r, warning = FALSE, echo = FALSE}
+tt$day_freq_f <- factor(tt$day_freq)
+
+ggplot(tt) + 
+ geom_point(aes(x = day_freq_f, 
+                y = like_pct)) +
+  labs(x = "Number of TikToks Per Day", y = "Likes Per Plays (%)") + 
+  scale_y_continuous(limits = c(0, 15), 
+                     labels = seq(0, 15, 1), 
+                     breaks = seq(0, 15, 1)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw()
+ggplot(tt) + 
+ geom_boxplot(aes(x = day_freq_f, 
+                y = like_pct)) +
+  labs(x = "Number of TikToks Per Day", y = "Likes Per Plays (%)") + 
+  scale_y_continuous(limits = c(0, 15), 
+                     labels = seq(0, 15, 1), 
+                     breaks = seq(0, 15, 1)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw()
+```
+
+
+### Like Percent by Day & Hour
+First let's look at like percent is highest on Wednesday or Tue. - Th.
+
+```{r, echo = FALSE, warning = FALSE}
+ggplot(tt) + 
+ geom_point(aes(x = weekday_f, 
+                y = like_pct, 
+                color = month_f)) +
+  labs(x = "Day", y = "Likes Per Plays (%)", color = "Month") + 
+  scale_y_continuous(limits = c(0, 15), 
+                     labels = seq(0, 15, 1), 
+                     breaks = seq(0, 15, 1)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90)) 
+  
+ggplot(tt) + 
+ geom_boxplot(aes(x = weekday_f, 
+                y = like_pct)) +
+  labs(x = "Day", y = "Likes Per Plays (%)") + 
+  scale_y_continuous(limits = c(0, 15), 
+                     labels = seq(0, 15, 1), 
+                     breaks = seq(0, 15, 1)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90)) 
+```
+
+Looking at the hour of day, 12PM, 1PM, or 3PM has the highest like percent.
+```{r, echo = FALSE, warning = FALSE}
+ggplot(tt) + 
+ geom_point(aes(x = hour_f, 
+                y = like_pct, 
+                color = month_f)) +
+  labs(x = "Day", y = "Likes Per Plays (%)", color = "Month") + 
+  scale_y_continuous(limits = c(0, 15), 
+                     labels = seq(0, 15, 1), 
+                     breaks = seq(0, 15, 1)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90)) 
+  
+ggplot(tt) + 
+ geom_boxplot(aes(x = hour_f, 
+                y = like_pct)) +
+  labs(x = "Day", y = "Likes Per Plays (%)") + 
+  scale_y_continuous(limits = c(0, 15), 
+                     labels = seq(0, 15, 1), 
+                     breaks = seq(0, 15, 1)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90)) 
+```
+
+
+Now let's look at open rates by the day and hour combination (e.g. Thursday 12PM). Looks like Tuesday at 12pm, Wednesday at 3pm, or Thursday at 1pm are the best times to post tiktoks to get likes.
+```{r, echo = FALSE, warning = FALSE}
+ggplot(tt) + 
+ geom_point(aes(x = day_hour, 
+                y = like_pct,
+                color = month_f)) +
+  labs(x = "Day and Hour", y = "Likes Per Plays (%)", color = "Month") + 
+  scale_y_continuous(limits = c(0, 15), 
+                     labels = seq(0, 15, 1), 
+                     breaks = seq(0, 15, 1)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90)) 
+  
+ggplot(tt) + 
+ geom_boxplot(aes(x = day_hour, 
+                y = like_pct)) +
+  labs(x = "Day and Hour", y = "Likes Per Plays (%)") + 
+  scale_y_continuous(limits = c(0, 15), 
+                     labels = seq(0, 15, 1), 
+                     breaks = seq(0, 15, 1)) +
+  # scale_x_continuous(limits = c(4, 26),
+  #                    labels = seq(4, 26, 2),
+  #                    breaks = seq(4, 26, 2)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90)) 
+```
+
+## Prep for Saving Data
 ```{r}
 tt
 ```
+
+# Save Data
+```{r}
+rm(fmt_hex, fmtf_hex, hex, calcFreq, fixDayDateTime)
+save(list = ls(all.names = TRUE), file = "exp_dat.RData", envir = .GlobalEnv)
+```
+
