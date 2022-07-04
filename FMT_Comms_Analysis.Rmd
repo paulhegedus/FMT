@@ -6,17 +6,20 @@ output: html_document
 ---
 
 # Forward MT Communications Analysis
-Analysis by communication type addressing the questions defined in the README file. 
+Analysis by communication type addressing the questions defined in the README file. Note that this document pertains to both Forward MT and Forward MT Foundation
 
 # Set Up
-##### Packages and colors.
+##### Packages and Functions
 ```{r}
 library(tidyverse)
 library(googlesheets4)
 googlesheets4::gs4_auth("p.hegedus@comcast.net")
 source("gpath.R")
 source("fmt_fxns.R")
+```
 
+Make objects with HEX codes for FMT and FMTF colors
+```{r}
 fmt_hex <- c("#FF8A3D", "#8C9093")             # orange, gray
 fmtf_hex <- c("#06038D", "#489FDF", "#D6001C") # dark blue, light blue, red
 hex <- c(fmt_hex[1], fmtf_hex[1])
@@ -26,6 +29,7 @@ hex <- c(fmt_hex[1], fmtf_hex[1])
 Import data, split by type. Do some basic preparations (e.g. Weekday to character & day of week).
 
 ## Email
+Import and pre process the email data.
 ```{r}
 ## import data
 fmt_e <- read_sheet(
@@ -54,6 +58,7 @@ fmt_e[is.na(fmt_e$Time), "hour"] <- "3 PM"
 fmt_e[is.na(fmt_e$Time), "hour_f"] <- "3 PM"
 ```
 
+Converting to more friendly object name. Oh and first noting the organization in a column.
 ```{r}
 fmt_e$Org <- "FMT"
 email <- fmt_e
@@ -61,7 +66,7 @@ email <- fmt_e
 
 ## Instagram
 ### Forward Montana
-First, the Forward Montana instagram...
+Import and pre process the instagram data.
 ```{r}
 ## import data
 fmt_i <- read_sheet(
@@ -117,7 +122,7 @@ fmt_i[is.na(fmt_i$`Graphic or Photo?`), col_of_int]
 
 
 ### Forward Montana Foundation
-Now the Forward Montana Foundation instagram...
+Import and pre process the instagram data.
 ```{r}
 ## import data
 fmtf_i <- read_sheet(
@@ -160,7 +165,7 @@ fmtf_i[is.na(fmtf_i$Time) & fmtf_i$usa_date == "05/31/2022", "hour"] <- "11 AM"
 fmtf_i[is.na(fmtf_i$Time) & fmtf_i$usa_date == "05/31/2022", "hour_f"] <- "11 AM"
 ```
 
-
+Put the instagram data together after indicating organization.
 ```{r}
 fmt_i$Org <- "FMT"
 fmtf_i$Org <- "FMTF"
@@ -169,6 +174,7 @@ insta <- rbind(fmt_i, fmtf_i)
 
 ## Facebook
 ### Forward Montana
+Import and do some preprocessing on FB data.
 ```{r}
 ## import data
 fmt_f <- read_sheet(
@@ -210,7 +216,7 @@ fmt_f[is.na(fmt_f$`Enagement rate`), col_of_int]
 ```
 
 ### Forward Montana Foundation
-Now the Forward Montana Foundation FB.
+Now the Forward Montana Foundation FB data.
 ```{r}
 ## import data
 fmtf_f <- read_sheet(
@@ -256,6 +262,7 @@ fb <- rbind(fmt_f, fmtf_f)
 
 
 ## TikTok
+Import and pre process the TikTok data.
 ```{r}
 ## import data
 tt <- read_sheet(
@@ -276,9 +283,45 @@ rm(indx, patterns, col_of_int, fmt_e, fmt_i, fmtf_i, fmt_f, fmtf_f)
 ```
 
 # Email
+Questions of interest are below. First some further processing.
+
 ```{r}
 email
+email$day_hour <- paste(email$weekday_f, email$hour_f) %>% 
+  factor()
 ```
+
+
+* What day of the week and time of day have the highest open rates, when accounting for recipients?
+
+First some initial figures about when emails are sent. 
+```{r}
+ggplot(email) +
+  geom_histogram(aes(x = weekday_f), stat = "count")
+ggplot(email) + 
+  geom_histogram(aes(x = month_f), stat = "count")
+```
+
+Now let's look at some metrics, like open rate by recipients.
+```{r}
+ggplot(email) + 
+  geom_point(aes(x = Recipients, y = `Open Rate`))
+```
+
+Initial linear model.
+```{r}
+m0 <- lm(`Open Rate` ~ Recipients + day_hour, data = email)
+anova(m0)
+plot(m0)
+summary(m0)
+```
+
+
+* What combination of day and time had highest open rates, when accounting for recipients?
+
+
+* How does frequency of emails in a week influence open rate?
+
 
 
 # Instagram
