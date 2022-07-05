@@ -278,7 +278,7 @@ summary(tt)
 ```
 
 # Clean Up
-```{r}
+```{r} 
 rm(indx, patterns, col_of_int, fmt_e, fmt_i, fmtf_i, fmt_f, fmtf_f, gpath, fixDayDateTime, calcFreq)
 ```
 

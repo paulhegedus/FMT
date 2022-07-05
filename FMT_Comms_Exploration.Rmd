@@ -993,7 +993,7 @@ ggplot(tt) +
   geom_histogram(aes(x = month_f), color = fmt_hex[1], fill = fmt_hex[1], stat = "count") +
   labs(x = "Month", y = "Number of TikToks Posted") + 
   scale_y_continuous(limits = c(0, 7), labels = seq(0, 7, 1), breaks = seq(0, 7, 1)) +
-  theme_bw()
+  theme_bw() 
 
 ggplot(tt) +
   geom_histogram(aes(x = weekday_f), color = fmt_hex[1], fill = fmt_hex[1], stat = "count") +

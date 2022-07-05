@@ -2367,7 +2367,7 @@ The following summarizes the main conclusions from each communication method and
 4) At both organizations, Facebook posts with just photos had the highest average engagement rates compared to graphics or both a graphic or photo. Additionally, both a graphic and photo in a FB post had higher engagement rates than FB posts with just a graphic.
 
 
-## TikTok
+## TikTok 
 
 1) The highest percent of likes per views/plays (like rate) was on Wednesday, with a clear pattern indicating that like rates are highest when TikToks are posted Tuesday - Thursday. The highet like rate occurs when TikToks are posted at 12PM or 3PM.
 

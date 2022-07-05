@@ -42,3 +42,4 @@ vignettes/*.pdf
 gpath.R
 prep_dat.RData
 exp_dat.RData
+*.html
