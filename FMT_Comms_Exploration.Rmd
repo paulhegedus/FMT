@@ -101,7 +101,7 @@ ggplot(email) +
 Let's look at the high open rate emails, defined as those above a 40% open rate. These are the "Progressive happy hour" email with 5 recipeints and the "School board forum reminder" with 46 recipients.
 ```{r, echo = FALSE}
 email[email$open_rate_pct > 40, 
-      c("Day", "usa_date", "ampm_time", "Email", "Recipients", "open_rate_pct")][1:2, ]
+      c("Weekday", "usa_date", "ampm_time", "Email", "Recipients", "open_rate_pct")][1:2, ]
 ```
 
 Let's look at the relationship between recipients and open rate without those observations. It's pretty flat indicating not too much of a relationship between open rates and recipients.

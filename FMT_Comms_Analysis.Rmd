@@ -1,57 +1,2379 @@
 ---
-title: "FMT_Comms_Analysis"
+title: "FMT Comms Report"
 author: "Paul Hegedus"
 date: "`r Sys.Date()`"
 output: html_document
 ---
 
-Analysis to answer the questions about the FMT and FMTF communications data. Each question addressed in text and with an accompying figure out output below.
+# Introduction
+Analysis report to answer the questions about the FMT (Forward Montana) and FMTF (Forward Montana Foundation) communications data. Each question addressed in text and with an accompanying figure out output below.
 
-# Setup
-Packages and Functions.
-```{r}
+The main questions addressed are; 
+
+* When is the best day and time to post?
+
+* Do graphics or photos have higher engagement?
+
+* Does too many emails or posts reduce open or engagement rates?
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+# Packages and Functions.
 options(na.action = "na.omit")
 library(tidyverse)
-library(googlesheets4)
-# googlesheets4::gs4_auth("p.hegedus@comcast.net")
+library(MuMIn)
+library(knitr)
+library(kableExtra)
 source("fmt_fxns.R")
 load("exp_dat.RData")
-```
 
+fmt_hex <- c("#FF8A3D", "#8C9093")             # orange, gray
+fmtf_hex <- c("#06038D", "#489FDF", "#D6001C") # dark blue, light blue, red
+hex <- c(fmt_hex[1], fmtf_hex[1])
+```
 
 # Email
+Report about email communications from Forward Montana (FMT). The summary and conclusion are short summaries of conclusions related to the following questions. The section for each question contains figures and more detailed interpretation.
 
-The two highest emails with open rates, not accounting for recipients, were the "Progressive happy hour", and the "School board forum reminder" with 5 and 46 recipients, respectively. These were deemed outliers and removed from the analysis below.
-```{r}
-email[email$open_rate_pct > 40, 
+## Summary
+Analysis below is for addressing the following questions about email communications;
+
+1) What day of the week and time of day have the highest open rates, when accounting for recipients?
+
+2) What combination of day and time had highest open rates, when accounting for recipients?
+
+3) How does frequency of emails in a week influence open rate?
+
+
+The answers were; 
+
+1) When accounting for recipients, Thursday is the best day to send emails with an expected open rate of 18-19% and 5PM is the best hour of day to send emails with an expected open rate of 25%. Sending emails before 1PM decreases open rates
+
+2) When accounting for recipients, Thursday at 5PM has the highest open rate. Thursday between 1PM and 5PM also had high open rates, as well as Friday at 5PM, and Wednesday at 4PM.
+
+3) Sending more emails in a month, week, and day all lower average open rates. The frequency of emails per month, week, and day follow with the corresponding open rate. The average open rate was 25% when 6 emails were sent per month, the average open rate was 24% when 2 emails were sent per week, and the average open rate was 18% when 1 email were sent per day.
+
+
+Quick statistics on email data;
+```{r, echo = FALSE}
+temp <- data.frame(Metric = c("Average Open Rate", 
+                              "Average Recipients", 
+                              "Average Emails Sent per Month", 
+                              "Average Emails Sent per Week", 
+                              "Average Emails Sent per Day"), 
+                   Value = c(mean(email$open_rate_pct, na.rm = TRUE) %>% round(2), 
+                             mean(email$Recipients, na.rm = TRUE) %>% round(2), 
+                             mean(email$month_freq, na.rm = TRUE) %>% round(2), 
+                             mean(email$week_freq, na.rm = TRUE) %>% round(2), 
+                             mean(email$day_freq, na.rm = TRUE) %>% round(2)),
+                   Rounded = c(mean(email$open_rate_pct, na.rm = TRUE) %>% round(0), 
+                             mean(email$Recipients, na.rm = TRUE) %>% round(0), 
+                             mean(email$month_freq, na.rm = TRUE) %>% round(0), 
+                             mean(email$week_freq, na.rm = TRUE) %>% round(0), 
+                             mean(email$day_freq, na.rm = TRUE) %>% round(0)))
+kable(temp, caption = "Summary statistics of FMT email communications.") %>%
+  kable_styling(font_size = 16, position = "center")
+```
+
+
+Before beginning analysis, insights about the email data from the exploratory phase showed two outliers that influence models and conclusions. The two highest emails with open rates, not accounting for recipients, were the "Progressive happy hour", and the "School board forum reminder" with 5 and 46 recipients, respectively. These were deemed outliers and removed from the analysis below.
+
+```{r, echo = FALSE}
+temp <- email[email$open_rate_pct > 40, 
       c("Weekday", "usa_date", "ampm_time", "Email", "Recipients", "open_rate_pct")][1:2, ]
+names(temp) <- c("Weekday", "Date", "Time", "Email", "Recipients", "Open Rate (%)")
+kable(temp, caption = "Outlier data points from email data, defined as open rate greater than 40%.") %>%
+  kable_styling(font_size = 16, position = "center")
+
+email$open_rate_weights <- (email$`Open Rate` * (email$Recipients / sum(email$Recipients))) * 100
+email$open_rate_adj <- email$open_rate_pct * email$open_rate_weights
 ```
 
-## Questions of Interest
 
-* What day of the week and time of day have the highest open rates, when accounting for recipients?
-* What combination of day and time had highest open rates, when accounting for recipients?
-* How does frequency of emails in a week influence open rate?
+## Question 1
+What day of the week and time of day have the highest open rates, when accounting for recipients?
 
-First, what day of the week and time of day have the highest open rates, when accounting for recipients?
 
-```{r}
+The first step , I look at it with the raw open rates and an adjusted open rate based on the number of recipients. To make the adjustment, I made a weight variable for each observation as the number of recipients of an email divided by the sum of recipients for all emails. I then multiplied this weight by the original open rate, resulting in an adjusted open rate which the number of opens for an email divided by the sum of all recipients of emails. The result is that when an open rate is equal between two emails, the email with the higher number of recipients will have a higher adjusted open rate compared to the email with the same open rate but less recipients. For example, an adjusted open rate for an email with an open rate of 500/1000 is greater than an open rate of 5/10 even though the open rate is 0.5% for both.
 
+
+### Day of Week
+The figures below illustrate the relationship between open rate (raw and adjusted, note y axis label), across weekdays. The bars indicate the 95% CI around the mean. This means that if we repeated collecting email data, we would expect the true mean open rate of emails would fall within this range 95% of samples. Further Interpretation of open rate and adjusted open rate's relationship with weekday is below.
+
+
+#### Raw Open Rate
+The figures and analysis below use the original open rate percent as the metric. Recipients are accounted for in the statistical analysis.
+
+```{r, echo = FALSE, warning = FALSE}
+temp1 <- email[!email$rm, ]
+pct_temp <- by(temp1$open_rate_pct, temp1$weekday_f, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    Day = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp$SD_Mean_Open_Rate <- by(temp1$open_rate_pct, temp1$weekday_f, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp$Lower_CI <- pct_temp$Mean_Open_Rate - 1.96 * (pct_temp$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+pct_temp$Upper_CI <- pct_temp$Mean_Open_Rate + 1.96 * (pct_temp$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+
+pct_temp$Day <- factor(pct_temp$Day, levels = levels(email$weekday_f))
+
+
+ggplot(pct_temp) + 
+ geom_col(aes(x = Day, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[1]) +
+  geom_errorbar(aes(x = Day, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Day", y = "Open Rate (%)") + 
+  scale_y_continuous(limits = c(0, 22), 
+                     labels = seq(0, 22, 2), 
+                     breaks = seq(0, 22, 2)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, vjust = 0.65)) 
 ```
 
-Second, what combination of day and time had highest open rates, when accounting for recipients?
+The mean open rate percent for emails sent on Sunday, Tuesday, Friday, and Saturday are lower than for Monday, Wednesday, or Thursday. Based on the raw open rate data, there appears to be no difference between open rates for emails sent on Monday, Wednesday, or Thursday. The following paragraphs outline the results from statistical tests for whether there is a difference between open rates across days of the week.
+
+The best linear regression model that characterizes open rates utilizes the number of recipients, the number of emails sent that day, and the month of year as parameters. Testing of different models found that these were the only statistically significant variables that affect open rate percent. 
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# first fit a full model
+temp1 <- email[!email$rm, ]
+
+m0 <- lm(open_rate_pct ~ Recipients + month_f * weekday_f * hour_f + month_freq + week_freq + day_freq, data = temp1)
+options(na.action = "na.fail")
+dm <- dredge(m0, extra = c("R^2"))
+# dm[dm$delta < 20, ]
+# dm[dm$delta < 5, ]
+m1 <- lm(open_rate_pct ~ Recipients + day_freq + month_f, data = temp1)
+# summary(m1)
+# plot(m1)
+```
+
+However to assess the influence of day of week on open rate it has to be added to the model, despite no statistical basis. When we account for all of the other variables in the model (recipients, frequency, etc.), there is no statistical evidence that the day of the week an email is sent influences open rate. 
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+m2 <- lm(open_rate_pct ~ Recipients + day_freq + month_f + weekday_f, data = temp1)
+car::Anova(m2, type = "II")
+```
+
+These results indicate that there was no statistical evidence that open rate percent was affected by the day of the week. However, because the data collected is a census, thus representing all of the emails sent, we are not dealing with a sample and can make conclusions based on statistics easier to calculate, such as the mean. 
+
+The average open rate was 18-19% on Monday, Wednesday, and Thursday. It was only 15-16% on all other days. This means that emails sent on Monday, Wednesday, and Thursday are the best days, on average, to send an email with a high open rate.
 
 
-Third, how does frequency of emails in a week influence open rate?
+#### Adjusted Open Rate
+However, now we'll look at the alternative metric. Adjusted open rate is a weighted open rate proportional to the number of recipients. It tells a slightly different story. 
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+temp1 <- email[!email$rm, ]
+pct_temp$Adj_Open_Rate <- by(temp1$open_rate_adj, temp1$weekday_f, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp$SD_Adj_Open_Rate <- by(temp1$open_rate_adj, temp1$weekday_f, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp$Adj_Lower_CI <- pct_temp$Adj_Open_Rate - 1.96 * (pct_temp$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+pct_temp$Adj_Upper_CI <- pct_temp$Adj_Open_Rate + 1.96 * (pct_temp$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+
+ggplot(pct_temp) + 
+ geom_col(aes(x = Day, 
+              y = Adj_Open_Rate ),
+          stat = "identity",
+          fill = hex[1]) +
+  geom_errorbar(aes(x = Day, ymin = Adj_Lower_CI, ymax = Adj_Upper_CI), width = 0.2) + 
+  labs(x = "Day", y = "Adjusted Open Rate (%)") + 
+  scale_y_continuous(limits = c(0, 12), 
+                     labels = seq(0, 12, 2), 
+                     breaks = seq(0, 12, 2)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, vjust = 0.65)) 
+```
+
+
+The mean adjusted open rate percent for emails sent on Sunday, Tuesday, Thursday are the greatest. The lowest open rates, adjusted by recipients, were on Wednesday, Friday, and Saturday.
+
+The best linear regression model that characterizes adjusted open rates didn't include recipients becauase it would be redundant. The statistically significant parameters were the interaction between month and weekday and the frequency of emails on a weekly basis. Testing of different models found that these were the only statistically significant variables that affect open rate percent. 
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# first fit a full model
+temp1 <- email[!email$rm, ]
+
+m0 <- lm(open_rate_adj ~ month_f * weekday_f * hour_f + month_freq + week_freq + day_freq, data = temp1)
+options(na.action = "na.fail")
+dm <- dredge(m0, extra = c("R^2"))
+# dm[dm$delta < 20, ]
+# dm[dm$delta < 5, ]
+m1 <- lm(open_rate_adj ~ month_f * weekday_f + week_freq, data = temp1)
+# summary(m1)
+# plot(m1)
+```
+
+To assess the influence of day of week on adjusted open rate it has to be added to the model, despite no statistical basis. There is significant evidence that the adjusted open rate differs between at least one pair of weekdays. A comparison test was performed to identify differences between days.
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+car::Anova(m1, type = "II")
+```
+
+These results indicate that there was statistical evidence that adjusted open rate percent was higher on Thursday. However, because the data collected is a census, thus representing all of the emails sent, we are not dealing with a sample and can make conclusions based on statistics easier to calculate, such as the mean. 
+
+The average adjusted open rate was 8% on Monday, Wednesday, and Thursday. It was only 6.5% on Tuesday and 1-4% on all other days.
+
+#### Conclusion
+Thursday is the best day to send emails with an expected open rate of 18-19%.
+
+
+### Hour of Day
+The figures below illustrate the relationship between open rate (raw and adjusted, note y axis label), across hour of day. Hour of day is the hour the email was sent, where if an email was sent at 12:37 PM the hour of day would be 12 PM. Note that axis text is in chronological order from left to right. 
+
+The bars indicate the 95% CI around the mean. This means that if we repeated collecting email data, we would expect the true mean open rate of emails would fall within this range 95% of samples. Further Interpretation of open rate and adjusted open rate's relationship with hour of day is below.
+
+
+#### Raw Open Rate
+The figures and analysis below use the original open rate percent as the metric. Recipients are accounted for in the statistical analysis.
+
+```{r, echo = FALSE, warning = FALSE}
+temp1 <- email[!email$rm, ]
+pct_temp <- by(temp1$open_rate_pct, temp1$hour_f, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    Hour = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp$SD_Mean_Open_Rate <- by(temp1$open_rate_pct, temp1$hour_f, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp$Lower_CI <- pct_temp$Mean_Open_Rate - 1.96 * (pct_temp$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+pct_temp$Upper_CI <- pct_temp$Mean_Open_Rate + 1.96 * (pct_temp$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+
+pct_temp$Hour <- factor(pct_temp$Hour, levels = levels(email$hour_f))
+
+
+ggplot(pct_temp) + 
+ geom_col(aes(x = Hour, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[1]) +
+  geom_errorbar(aes(x = Hour, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Hour of Day Email Sent", y = "Open Rate (%)") + 
+  scale_y_continuous(limits = c(0, 30), 
+                     labels = seq(0, 30, 2), 
+                     breaks = seq(0, 30, 2)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 90, vjust = 0.65)) 
+```
+
+The mean open rate percent was highest when emails were sent at 5PM. Sending emails before 1PM decreased open rates.
+
+The best linear regression model that characterizes open rates utilizes the number of recipients, the number of emails sent that day, and the month of year as parameters. Testing of different models found that these were the only statistically significant variables that affect open rate percent. 
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# first fit a full model
+temp1 <- email[!email$rm, ]
+
+m0 <- lm(open_rate_pct ~ Recipients + month_f * weekday_f * hour_f + month_freq + week_freq + day_freq, data = temp1)
+options(na.action = "na.fail")
+dm <- dredge(m0, extra = c("R^2"))
+# dm[dm$delta < 20, ]
+# dm[dm$delta < 5, ]
+m1 <- lm(open_rate_pct ~ Recipients + day_freq + month_f, data = temp1)
+# summary(m1)
+# plot(m1)
+```
+
+However to assess the influence of day of hour on open rate it has to be added to the model, despite no statistical basis. When we account for all of the other variables in the model (recipients, frequency, etc.), there is no statistical evidence that the hour of day an email is sent influences open rate. 
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+m2 <- lm(open_rate_pct ~ Recipients + day_freq + month_f + hour_f, data = temp1)
+car::Anova(m2, type = "II")
+```
+
+These results indicate that there was no statistical evidence that open rate percent was affected by the hour of day sent. However, because the data collected is a census, thus representing all of the emails sent, we are not dealing with a sample and can make conclusions based on statistics easier to calculate, such as the mean.
+
+The average open rate was 25% for emails sent at 5PM, 19-21% at 1PM, 2PM, 4PM, and 10PM, and 13-15% at all other times.
+
+
+#### Adjusted Open Rate
+However, now we'll look at the alternative metric. Adjusted open rate is a weighted open rate proportional to the number of recipients. It tells a slightly different story. 
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+temp1 <- email[!email$rm, ]
+pct_temp$Adj_Open_Rate <- by(temp1$open_rate_adj, temp1$hour_f, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp$SD_Adj_Open_Rate <- by(temp1$open_rate_adj, temp1$hour_f, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp$Adj_Lower_CI <- pct_temp$Adj_Open_Rate - 1.96 * (pct_temp$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+pct_temp$Adj_Upper_CI <- pct_temp$Adj_Open_Rate + 1.96 * (pct_temp$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+
+ggplot(pct_temp) + 
+ geom_col(aes(x = Hour, 
+              y = Adj_Open_Rate ),
+          stat = "identity",
+          fill = hex[1]) +
+  geom_errorbar(aes(x = Hour, ymin = Adj_Lower_CI, ymax = Adj_Upper_CI), width = 0.2) + 
+  labs(x = "Hour of Day Email Sent", y = "Adjusted Open Rate (%)") + 
+  scale_y_continuous(limits = c(0, 22), 
+                     labels = seq(0, 22, 2), 
+                     breaks = seq(0, 22, 2)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 90, vjust = 0.65)) 
+```
+
+
+The mean adjusted open rate percent for emails sent at 5PM was the highest. Sending emails before 12PM remained ineffective at achieving high open rates.
+
+The best linear regression model that characterizes adjusted open rates didn't include recipients becauase it would be redundant. The statistically significant parameters were the interaction between month and weekday and the frequency of emails on a weekly basis. Testing of different models found that these were the only statistically significant variables that affect open rate percent. 
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# first fit a full model
+temp1 <- email[!email$rm, ]
+
+m0 <- lm(open_rate_adj ~ month_f * weekday_f * hour_f + month_freq + week_freq + day_freq, data = temp1)
+options(na.action = "na.fail")
+dm <- dredge(m0, extra = c("R^2"))
+# dm[dm$delta < 20, ]
+# dm[dm$delta < 5, ]
+m1 <- lm(open_rate_adj ~ month_f * weekday_f + week_freq, data = temp1)
+# summary(m1)
+# plot(m1)
+```
+
+To assess the influence of day of week on adjusted open rate it has to be added to the model, despite no statistical basis. There is significant evidence that the adjusted open rate differs between at least one pair of weekdays. A comparison test was performed to identify differences between days.
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+m2 <- lm(open_rate_adj ~ month_f * weekday_f + week_freq + hour_f, data = temp1)
+car::Anova(m2, type = "II")
+```
+
+These results indicate that there was statistical evidence that adjusted open rate percent was higher at any given time compared to another when accounting for all other factors. However, because the data collected is a census, thus representing all of the emails sent, we are not dealing with a sample and can make conclusions based on statistics easier to calculate, such as the mean. 
+
+The average adjusted open rate was 17% at 5PM, 7% at 12PM, and 1-5% at all other times.
+
+#### Conclusion
+5PM is the best hour of day to send emails with an expected open rate of 25%.
+
+
+## Question 2
+Next, we'll look at whether a certain combination of weekday and hour of day has an effect on open rates (raw and adjusted). The raw and adjusted open rates by weekday and hour of day are below. Hour of day is the hour the email was sent, where if an email was sent at 12:37 PM the hour of day would be 12 PM. Note that axis text is in chronological order from left to right. Not all days and hour combinations have had an email sent, so the x axis only reflects days and hours combinations where an email was sent. 
+
+#### Raw Open Rate
+The figures and analysis below use the original open rate percent as the metric. Recipients are accounted for in the statistical analysis.
+
+```{r, echo = FALSE, warning = FALSE}
+temp1 <- email[!email$rm, ]
+pct_temp <- by(temp1$open_rate_pct, temp1$day_hour, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    day_hour = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp$SD_Mean_Open_Rate <- by(temp1$open_rate_pct, temp1$day_hour, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp$Lower_CI <- pct_temp$Mean_Open_Rate - 1.96 * (pct_temp$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+pct_temp$Upper_CI <- pct_temp$Mean_Open_Rate + 1.96 * (pct_temp$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+
+pct_temp$day_hour <- factor(pct_temp$day_hour, levels = levels(email$day_hour))
+pct_temp <- pct_temp[!is.na(pct_temp$Mean_Open_Rate), ]
+
+ggplot(pct_temp) + 
+ geom_col(aes(x = day_hour, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[1]) +
+  # geom_errorbar(aes(x = day_hour, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Day & Hour", y = "Open Rate (%)") + 
+  scale_y_continuous(limits = c(0, 35), 
+                     labels = seq(0, 35, 5), 
+                     breaks = seq(0, 35, 5)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 90)) 
+```
+
+The mean open rate percent for emails sent on Thursday between 1PM and 5PM and Friday at 5PM were the highest. The following paragraphs outline the results from statistical tests for whether there is a difference between open rates across days of the week.
+
+The best linear regression model that characterizes open rates utilizes the number of recipients, the number of emails sent that day, and the month of year as parameters. Testing of different models found that these were the only statistically significant variables that affect open rate percent. 
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# first fit a full model
+temp1 <- email[!email$rm, ]
+temp1 <- temp1[!is.na(temp1$day_hour), ]
+
+m0 <- lm(open_rate_pct ~ Recipients + month_f * day_hour + month_freq + week_freq + day_freq, data = temp1)
+options(na.action = "na.fail")
+dm <- dredge(m0, extra = c("R^2"))
+# dm[dm$delta < 20, ]
+# dm[dm$delta < 5, ]
+m1 <- lm(open_rate_pct ~ Recipients + day_freq + month_f, data = temp1)
+# summary(m1)
+# plot(m1)
+```
+
+However to assess the influence of day of week on open rate it has to be added to the model, despite no statistical basis. When we account for all of the other variables in the model (recipients, frequency, etc.), there is no statistical evidence that the day and hour combination influences open rate. 
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+m2 <- lm(open_rate_pct ~ Recipients + day_freq + month_f + day_hour, data = temp1)
+car::Anova(m2, type = "II")
+```
+
+These results indicate that there was no statistical evidence that open rate percent was affected by the day of the week and hour of day combination. However, because the data collected is a census, thus representing all of the emails sent, we are not dealing with a sample and can make conclusions based on statistics easier to calculate, such as the mean. 
+
+The average open rate was 29-33% for emails sent on Thursdays at 1PM - 5PM and 31% for Friday at 5PM. The average open rate was 26% for emails sent Wednesdays at 4PM. Open rate averages were 20% or less For all other day of week and hour of day combinations. 
+
+
+#### Adjusted Open Rate
+The figures and analysis below use the adjusted open rate percent as the metric. Adjusted open rate is a weighted open rate proportional to the number of recipients.
+
+```{r, echo = FALSE, warning = FALSE}
+temp1 <- email[!email$rm, ]
+pct_temp <- by(temp1$open_rate_adj, temp1$day_hour, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    day_hour = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp$SD_Mean_Open_Rate <- by(temp1$open_rate_adj, temp1$day_hour, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp$Lower_CI <- pct_temp$Mean_Open_Rate - 1.96 * (pct_temp$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+pct_temp$Upper_CI <- pct_temp$Mean_Open_Rate + 1.96 * (pct_temp$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+
+pct_temp$day_hour <- factor(pct_temp$day_hour, levels = levels(email$day_hour))
+pct_temp <- pct_temp[!is.na(pct_temp$Mean_Open_Rate), ]
+
+ggplot(pct_temp) + 
+ geom_col(aes(x = day_hour, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[1]) +
+  # geom_errorbar(aes(x = day_hour, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Day & Hour", y = "Adjusted Open Rate (%)") + 
+  scale_y_continuous(limits = c(0, 50), 
+                     labels = seq(0, 50, 10), 
+                     breaks = seq(0, 50, 10)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 90)) 
+```
+
+The mean open rate percent for emails sent on Thursdays at 5PM was the highest. The following paragraphs outline the results from statistical tests for whether there is a difference between open rates across days of the week.
+
+The best linear regression model that characterizes open rates utilizes the number of recipients, the number of emails sent that week, and the month of year as parameters. Testing of different models found that these were the only statistically significant variables that affect open rate percent. 
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# first fit a full model
+temp1 <- email[!email$rm, ]
+temp1 <- temp1[!is.na(temp1$day_hour), ]
+
+m0 <- lm(open_rate_adj ~ Recipients + month_f * day_hour + month_freq + week_freq + day_freq, data = temp1)
+options(na.action = "na.fail")
+dm <- dredge(m0, extra = c("R^2"))
+# dm[dm$delta < 20, ]
+# dm[dm$delta < 5, ]
+m1 <- lm(open_rate_adj ~ Recipients + week_freq + month_f, data = temp1)
+# summary(m1)
+# plot(m1)
+```
+
+However to assess the influence of day of week on open rate it has to be added to the model, despite no statistical basis. When we account for all of the other variables in the model (recipients, frequency, etc.), there is no statistical evidence that the day and hour combination influences open rate. 
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+m2 <- lm(open_rate_adj ~ Recipients + week_freq + month_f + day_hour, data = temp1)
+car::Anova(m2, type = "II")
+```
+
+These results indicate that there was statistical evidence that the average open rate percent was higher Thursday at 5PM compared to the other day of week and hour of day combinations.
+
+#### Conclusion
+Thursday at 5PM is the best hour of the day to send emails, with an expected average open rate of 33% and average adjusted open rate of 45%. This indicates that even when accounting for recipients, this day and time results in the highest open rates.
+
+Thursdays between 1PM - 5PM are also good times, as well as Friday at 5PM, and Wednesday at 4PM. Also noteworthy is that sending emails before 1PM seems to decrease open rates.
+
+
+## Question 3
+The third question was how the frequency of emails influences open rates? First, the relationship between open rate (raw and adjusted) and frequency of emails sent in a month, week, or day are shown. Following is interpretation and more statistical assessments.
+
+### Monthly Frequency 
+The figures below illustrate the relationship between open rate (raw and adjusted, note y axis label), across different frequencies of monthly emails. The bars indicate the 95% CI around the mean. This means that if we repeated collecting email data, we would expect the true mean open rate of emails would fall within this range 95% of samples. Further Interpretation of open rate and adjusted open rate's relationship with monthly frequency is below.
+
+
+#### Raw Open Rate
+The figures and analysis below use the original open rate percent as the metric. Recipients are accounted for in the statistical analysis.
+
+```{r, echo = FALSE, warning = FALSE}
+temp1 <- email[!email$rm, ]
+pct_temp <- by(temp1$open_rate_pct, temp1$month_freq, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    month_freq = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp$SD_Mean_Open_Rate <- by(temp1$open_rate_pct, temp1$month_freq, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp$Lower_CI <- pct_temp$Mean_Open_Rate - 1.96 * (pct_temp$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+pct_temp$Upper_CI <- pct_temp$Mean_Open_Rate + 1.96 * (pct_temp$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+
+pct_temp$month_freq <- factor(pct_temp$month_freq, levels = unique(pct_temp$month_freq))
+
+
+ggplot(pct_temp) + 
+ geom_col(aes(x = month_freq, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[1]) +
+  geom_errorbar(aes(x = month_freq, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Number of Emails Sent in a Month", y = "Open Rate (%)") + 
+  scale_y_continuous(limits = c(0, 28), 
+                     labels = seq(0, 28, 2), 
+                     breaks = seq(0, 28, 2)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, vjust = 0.65)) 
+```
+
+The mean open rate percent was highest with 6 emails sent per month. In months where more than 9 emails were sent the open rate declined. 
+
+The best linear regression model that characterizes open rates utilizes the number of recipients, the number of emails sent that day, and the month of year as parameters. Testing of different models found that these were the only statistically significant variables that affect open rate percent. 
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# first fit a full model
+temp1 <- email[!email$rm, ]
+
+m0 <- lm(open_rate_pct ~ Recipients + month_f * month_freq * hour_f + month_freq + week_freq + day_freq, data = temp1)
+options(na.action = "na.fail")
+dm <- dredge(m0, extra = c("R^2"))
+# dm[dm$delta < 20, ]
+# dm[dm$delta < 5, ]
+m1 <- lm(open_rate_pct ~ Recipients + day_freq + month_f, data = temp1)
+# summary(m1)
+# plot(m1)
+```
+
+However to assess the influence of day of week on open rate it has to be added to the model, despite no statistical basis. When we account for all of the other variables in the model (recipients, frequency, etc.), there is no statistical evidence that the day of the week an email is sent influences open rate. 
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+m2 <- lm(open_rate_pct ~ Recipients + day_freq + month_f + month_freq, data = temp1)
+car::Anova(m2, type = "II")
+```
+
+These results indicate that there was no statistical evidence that open rate percent was affected by the frequency of emails sent in a month. However, because the data collected is a census, thus representing all of the emails sent, we are not dealing with a sample and can make conclusions based on statistics easier to calculate, such as the mean. 
+
+The average open rate was 25% when 6 emails were sent per month. The average open rate was 11% when 8 emails were sent in a month and decreased from 19% to 14% from 9 to 25 emails per month. 
+
+
+#### Adjusted Open Rate
+The figures and analysis below use the adjusted open rate percent as the metric. 
+
+```{r, echo = FALSE, warning = FALSE}
+temp1 <- email[!email$rm, ]
+pct_temp <- by(temp1$open_rate_adj, temp1$month_freq, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    month_freq = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp$SD_Mean_Open_Rate <- by(temp1$open_rate_adj, temp1$month_freq, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp$Lower_CI <- pct_temp$Mean_Open_Rate - 1.96 * (pct_temp$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+pct_temp$Upper_CI <- pct_temp$Mean_Open_Rate + 1.96 * (pct_temp$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+
+pct_temp$month_freq <- factor(pct_temp$month_freq, levels = unique(pct_temp$month_freq))
+
+
+ggplot(pct_temp) + 
+ geom_col(aes(x = month_freq, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[1]) +
+  geom_errorbar(aes(x = month_freq, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Number of Emails Sent in a Month", y = "Adjusted Open Rate (%)") + 
+  scale_y_continuous(limits = c(0, 15), 
+                     labels = seq(0, 15, 3), 
+                     breaks = seq(0, 15, 3)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, vjust = 0.65)) 
+```
+
+The mean open rate percent was highest with 6 emails sent per month. In months where more than 9 emails were sent the open rate declined. 
+
+The best linear regression model that characterizes open rates utilizes the number of recipients, the number of emails sent that week, and the month of year as parameters. Testing of different models found that these were the only statistically significant variables that affect open rate percent. 
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# first fit a full model
+temp1 <- email[!email$rm, ]
+
+m0 <- lm(open_rate_adj ~ Recipients + month_f * month_freq * hour_f + month_freq + week_freq + day_freq, data = temp1)
+options(na.action = "na.fail")
+dm <- dredge(m0, extra = c("R^2"))
+# dm[dm$delta < 20, ]
+# dm[dm$delta < 5, ]
+m1 <- lm(open_rate_adj ~ Recipients + week_freq + month_f, data = temp1)
+# summary(m1)
+# plot(m1)
+```
+
+However to assess the influence of day of week on open rate it has to be added to the model, despite no statistical basis. When we account for all of the other variables in the model (recipients, frequency, etc.), there is no statistical evidence that the day of the week an email is sent influences open rate. 
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+m2 <- lm(open_rate_adj ~ Recipients + week_freq + month_f + month_freq, data = temp1)
+car::Anova(m2, type = "II")
+```
+
+The same trend as the raw data was seen with the adjusted open rate. Less emails per month results in higher open rates.
+
+
+### Weekly Frequency 
+The figures below illustrate the relationship between open rate (raw and adjusted, note y axis label), across different frequencies of weekly emails. The bars indicate the 95% CI around the mean. This means that if we repeated collecting email data, we would expect the true mean open rate of emails would fall within this range 95% of samples. Further Interpretation of open rate and adjusted open rate's relationship with weekly frequency is below.
+
+
+#### Raw Open Rate
+The figures and analysis below use the original open rate percent as the metric. Recipients are accounted for in the statistical analysis.
+
+```{r, echo = FALSE, warning = FALSE}
+temp1 <- email[!email$rm, ]
+pct_temp <- by(temp1$open_rate_pct, temp1$week_freq, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    week_freq = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp$SD_Mean_Open_Rate <- by(temp1$open_rate_pct, temp1$week_freq, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp$Lower_CI <- pct_temp$Mean_Open_Rate - 1.96 * (pct_temp$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+pct_temp$Upper_CI <- pct_temp$Mean_Open_Rate + 1.96 * (pct_temp$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+
+pct_temp$week_freq <- factor(pct_temp$week_freq, levels = unique(pct_temp$week_freq))
+
+
+ggplot(pct_temp) + 
+ geom_col(aes(x = week_freq, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[1]) +
+  geom_errorbar(aes(x = week_freq, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Number of Emails Sent in a Week", y = "Open Rate (%)") + 
+  scale_y_continuous(limits = c(0, 28), 
+                     labels = seq(0, 28, 2), 
+                     breaks = seq(0, 28, 2)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, vjust = 0.65)) 
+```
+
+The mean open rate percent was highest with 2 emails sent per week. In weeks where more than 2 emails were sent the open rate declined. 
+
+The best linear regression model that characterizes open rates utilizes the number of recipients, the number of emails sent that day, and the week of year as parameters. Testing of different models found that these were the only statistically significant variables that affect open rate percent. 
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# first fit a full model
+temp1 <- email[!email$rm, ]
+
+m0 <- lm(open_rate_pct ~ Recipients + month_f * month_freq * hour_f + month_freq + week_freq + day_freq, data = temp1)
+options(na.action = "na.fail")
+dm <- dredge(m0, extra = c("R^2"))
+# dm[dm$delta < 20, ]
+# dm[dm$delta < 5, ]
+m1 <- lm(open_rate_pct ~ Recipients + day_freq + month_f, data = temp1)
+# summary(m1)
+# plot(m1)
+```
+
+However to assess the influence of day of week on open rate it has to be added to the model, despite no statistical basis. When we account for all of the other variables in the model (recipients, frequency, etc.), there is no statistical evidence that the day of the week an email is sent influences open rate. 
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+m2 <- lm(open_rate_pct ~ Recipients + day_freq + month_f + week_freq, data = temp1)
+car::Anova(m2, type = "II")
+```
+
+These results indicate that there was no statistical evidence that open rate percent was affected by the frequency of emails sent in a week. However, because the data collected is a census, thus representing all of the emails sent, we are not dealing with a sample and can make conclusions based on statistics easier to calculate, such as the mean. 
+
+The average open rate was 24% when 2 emails were sent per week. The average open rate was 19% when 1 emails were sent in a week and was 12-15% for more than 2 emails sent in a week.
+
+
+#### Adjusted Open Rate
+The figures and analysis below use the adjusted open rate percent as the metric. 
+
+```{r, echo = FALSE, warning = FALSE}
+temp1 <- email[!email$rm, ]
+pct_temp <- by(temp1$open_rate_adj, temp1$week_freq, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    week_freq = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp$SD_Mean_Open_Rate <- by(temp1$open_rate_adj, temp1$week_freq, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp$Lower_CI <- pct_temp$Mean_Open_Rate - 1.96 * (pct_temp$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+pct_temp$Upper_CI <- pct_temp$Mean_Open_Rate + 1.96 * (pct_temp$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+
+pct_temp$week_freq <- factor(pct_temp$week_freq, levels = unique(pct_temp$week_freq))
+
+
+ggplot(pct_temp) + 
+ geom_col(aes(x = week_freq, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[1]) +
+  geom_errorbar(aes(x = week_freq, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Number of Emails Sent in a Week", y = "Adjusted Open Rate (%)") + 
+  scale_y_continuous(limits = c(0, 15), 
+                     labels = seq(0, 15, 3), 
+                     breaks = seq(0, 15, 3)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, vjust = 0.65)) 
+```
+
+The mean open rate percent was highest with 2 emails sent per week. In weeks where more than 2 emails were sent the open rate declined. 
+
+The best linear regression model that characterizes open rates utilizes the number of recipients, the number of emails sent that week, and the week of year as parameters. Testing of different models found that these were the only statistically significant variables that affect open rate percent. 
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# first fit a full model
+temp1 <- email[!email$rm, ]
+
+m0 <- lm(open_rate_adj ~ Recipients + month_f * month_freq * hour_f + month_freq + week_freq + day_freq, data = temp1)
+options(na.action = "na.fail")
+dm <- dredge(m0, extra = c("R^2"))
+# dm[dm$delta < 20, ]
+# dm[dm$delta < 5, ]
+m1 <- lm(open_rate_adj ~ Recipients + week_freq + month_f, data = temp1)
+# summary(m1)
+# plot(m1)
+```
+
+However to assess the influence of day of week on open rate it has to be added to the model, despite no statistical basis. When we account for all of the other variables in the model (recipients, frequency, etc.), there is no statistical evidence that the day of the week an email is sent influences open rate. 
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+m2 <- lm(open_rate_adj ~ Recipients + week_freq + month_f, data = temp1)
+car::Anova(m2, type = "II")
+```
+
+This shows statistical evidence that the adjusted open rate is influenced by the frequency of emails sent in a week. Sending more than 2 emails per week decreases open rates when accounting for recipients.
+
+
+### Daily Frequency 
+The figures below illustrate the relationship between open rate (raw and adjusted, note y axis label), across different frequencies of daily emails. The bars indicate the 95% CI around the mean. This means that if we repeated collecting email data, we would expect the true mean open rate of emails would fall within this range 95% of samples. Further Interpretation of open rate and adjusted open rate's relationship with daily frequency is below.
+
+
+#### Raw Open Rate
+The figures and analysis below use the original open rate percent as the metric. Recipients are accounted for in the statistical analysis.
+
+```{r, echo = FALSE, warning = FALSE}
+temp1 <- email[!email$rm, ]
+pct_temp <- by(temp1$open_rate_pct, temp1$day_freq, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    day_freq = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp$SD_Mean_Open_Rate <- by(temp1$open_rate_pct, temp1$day_freq, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp$Lower_CI <- pct_temp$Mean_Open_Rate - 1.96 * (pct_temp$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+pct_temp$Upper_CI <- pct_temp$Mean_Open_Rate + 1.96 * (pct_temp$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+
+pct_temp$day_freq <- factor(pct_temp$day_freq, levels = unique(pct_temp$day_freq))
+
+
+ggplot(pct_temp) + 
+ geom_col(aes(x = day_freq, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[1]) +
+  geom_errorbar(aes(x = day_freq, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Number of Emails Sent in a Day", y = "Open Rate (%)") + 
+  scale_y_continuous(limits = c(0, 20), 
+                     labels = seq(0, 20, 2), 
+                     breaks = seq(0, 20, 2)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, vjust = 0.65)) 
+```
+
+The mean open rate percent was highest with 1 emails sent per day. Sending 5 emails a day resulted in the lowest average open rates.
+
+The best linear regression model that characterizes open rates utilizes the number of recipients, the number of emails sent that day, and the day of year as parameters. Testing of different models found that these were the only statistically significant variables that affect open rate percent. 
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# first fit a full model
+temp1 <- email[!email$rm, ]
+
+m0 <- lm(open_rate_pct ~ Recipients + month_f * month_freq * hour_f + month_freq + day_freq + day_freq, data = temp1)
+options(na.action = "na.fail")
+dm <- dredge(m0, extra = c("R^2"))
+# dm[dm$delta < 20, ]
+# dm[dm$delta < 5, ]
+m1 <- lm(open_rate_pct ~ Recipients + day_freq + month_f, data = temp1)
+# summary(m1)
+# plot(m1)
+```
+
+However to assess the influence of day of day on open rate it has to be added to the model, despite no statistical basis. When we account for all of the other variables in the model (recipients, frequency, etc.), there is no statistical evidence that the day of the day an email is sent influences open rate. 
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+m2 <- lm(open_rate_pct ~ Recipients + day_freq + month_f, data = temp1)
+car::Anova(m2, type = "II")
+```
+
+These results indicate that there was statistical evidence that open rate percent was affected by the frequency of emails sent in a day. This corroborates evidence seen in the more basic statistics, which are valid because this is a census rather than a sample.
+
+The average open rate was 18% when 1 email were sent per day. The average open rate was 17% when 3 emails were sent in a day, 14% when 2 emails were sent in a day and 12% when 5 emails were sent in a day. 
+
+#### Adjusted Open Rate
+The figures and analysis below use the adjusted open rate percent as the metric. 
+
+```{r, echo = FALSE, warning = FALSE}
+temp1 <- email[!email$rm, ]
+pct_temp <- by(temp1$open_rate_adj, temp1$day_freq, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    day_freq = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp$SD_Mean_Open_Rate <- by(temp1$open_rate_adj, temp1$day_freq, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp$Lower_CI <- pct_temp$Mean_Open_Rate - 1.96 * (pct_temp$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+pct_temp$Upper_CI <- pct_temp$Mean_Open_Rate + 1.96 * (pct_temp$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+
+pct_temp$day_freq <- factor(pct_temp$day_freq, levels = unique(pct_temp$day_freq))
+
+
+ggplot(pct_temp) + 
+ geom_col(aes(x = day_freq, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[1]) +
+  geom_errorbar(aes(x = day_freq, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Number of Emails Sent in a Day", y = "Adjusted Open Rate (%)") + 
+  scale_y_continuous(limits = c(0, 9), 
+                     labels = seq(0, 9, 1), 
+                     breaks = seq(0, 9, 1)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, vjust = 0.65)) 
+```
+
+The mean open rate percent was highest with 2 emails sent per day. In days where more than 2 emails were sent the open rate declined. 
+
+The best linear regression model that characterizes open rates utilizes the number of recipients, and the interaction of month and weekday as parameters. Testing of different models found that these were the only statistically significant variables that affect open rate percent. 
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# first fit a full model
+temp1 <- email[!email$rm, ]
+
+m0 <- lm(open_rate_adj ~ Recipients + month_f * weekday_f * hour_f + month_freq + week_freq + day_freq, data = temp1)
+options(na.action = "na.fail")
+dm <- dredge(m0, extra = c("R^2"))
+# dm[dm$delta < 20, ]
+# dm[dm$delta < 5, ]
+m1 <- lm(open_rate_adj ~ Recipients + month_f * weekday_f, data = temp1)
+# summary(m1)
+# plot(m1)
+```
+
+However to assess the influence of day of day on open rate it has to be added to the model, despite no statistical basis. When we account for all of the other variables in the model (recipients, frequency, etc.), there is no statistical evidence that the day of the day an email is sent influences open rate. 
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+m2 <- lm(open_rate_adj ~ Recipients + month_f * weekday_f + day_freq, data = temp1)
+car::Anova(m2, type = "II")
+```
+
+This shows statistical evidence that the adjusted open rate is slightly influenced by the frequency of emails sent in a day. This indicates that sending 1 email a day had the highest average open rate, but there was no difference between the rest.
+
+### Conclusion
+Sending more emails in a month, week, and day all lower average open rates. The frequency of emails per month, week, and day follow with the corresponding open rate. The average open rate was 25% when 6 emails were sent per month, the average open rate was 24% when 2 emails were sent per week, and the average open rate was 18% when 1 email were sent per day.
+
 
 
 # Instagram
+Report about Instagram communications from Forward Montana (FMT). The summary and conclusion are short summaries of conclusions related to the following questions. The section for each question contains figures and more detailed interpretation.
 
-* What day of the week and time of day have the highest engagement rate?
-* What combination of day and time had highest engagement rate?
-* Do graphics or photos have higher engagement rates?
+## Summary
+Analysis below is for addressing the following questions about Instagram communications;
+
+1) What day of the week and time of day have the highest engagement rates, for each organization?
 
 
+2) What combination of day and time had highest engagement rates, when accounting for organization?
+
+
+3) How does frequency of posts influence engagement rates for each organization?
+
+
+4) Do graphics or photos have higher engagement rates?
+
+
+The answers were; 
+
+1) Thursdays appear to be the day of the week with the highest engagement rates for Forward Montana Instagram posts while Monday had the highest engagement rates for Forward Montana Foundation posts. For Forward Montana, posting at 5PM resulted in the highest engagement rate while 2PM resulted in the highest engagement for Forward Montana Foundation posts.
+
+2) The average engagement rate was highest for Forward Montana Instagrams posted Tuesday at 12PM, Thursday at 11AM, or Friday at 5PM, while The average engagement rate was highest for Forward Montana Foundation Instagrams posted on Mondays at 8AM.
+
+3) Engagement rate decreases at Forward Montana with more than 10 IG posts a month, while engagement rate with Forward Montana Foundation decreases after 3 IG posts a month. Engagement rate decreases at Forward Montana with more than 3 IG posts a week and more than 2 IG posts a day. Data was inconclusive for weekly and daily frequency at Forward Montana Foundation.
+
+4) At both organizations, Instagram posts with just photos had the highest average engamgenet rates compared to graphics or both a graphic or photo.
+
+
+Quick statistics on Instagram data;
+```{r, echo = FALSE}
+insta_fmt <- insta[insta$Org == "FMT", ]
+temp <- data.frame(Metric = c("Average Engagement Rate", 
+                              "Average Insta Posts per Month", 
+                              "Average Insta Posts per Week", 
+                              "Average Insta Posts per Day"), 
+                   Value = c(mean(insta_fmt$eng_rate_pct, na.rm = TRUE) %>% round(2), 
+                             mean(insta_fmt$month_freq, na.rm = TRUE) %>% round(2), 
+                             mean(insta_fmt$week_freq, na.rm = TRUE) %>% round(2), 
+                             mean(insta_fmt$day_freq, na.rm = TRUE) %>% round(2)),
+                   Rounded = c(mean(insta_fmt$eng_rate_pct, na.rm = TRUE) %>% round(0), 
+                             mean(insta_fmt$month_freq, na.rm = TRUE) %>% round(0), 
+                             mean(insta_fmt$week_freq, na.rm = TRUE) %>% round(0), 
+                             mean(insta_fmt$day_freq, na.rm = TRUE) %>% round(0)))
+kable(temp, caption = "Summary statistics of FMT Instagram communications.") %>%
+  kable_styling(font_size = 16, position = "center")
+
+
+
+insta_fmtf <- insta[insta$Org == "FMTF", ]
+temp <- data.frame(Metric = c("Average Engagement Rate", 
+                              "Average Insta Posts per Month", 
+                              "Average Insta Posts per Week", 
+                              "Average Insta Posts per Day"), 
+                   Value = c(mean(insta_fmtf$eng_rate_pct, na.rm = TRUE) %>% round(2), 
+                             mean(insta_fmtf$month_freq, na.rm = TRUE) %>% round(2), 
+                             mean(insta_fmtf$week_freq, na.rm = TRUE) %>% round(2), 
+                             mean(insta_fmtf$day_freq, na.rm = TRUE) %>% round(2)),
+                   Rounded = c(mean(insta_fmtf$eng_rate_pct, na.rm = TRUE) %>% round(0), 
+                             mean(insta_fmtf$month_freq, na.rm = TRUE) %>% round(0), 
+                             mean(insta_fmtf$week_freq, na.rm = TRUE) %>% round(0), 
+                             mean(insta_fmtf$day_freq, na.rm = TRUE) %>% round(0)))
+kable(temp, caption = "Summary statistics of FMTF Instagram communications.") %>%
+  kable_styling(font_size = 16, position = "center")
+```
+
+## Question 1
+What day of the week and time of day have the highest engagement rates, for each organization?
+
+### Day of Week
+The figures below illustrate the relationship between engagement rate across weekdays. The bars indicate the 95% CI around the mean. This means that if we repeated collecting email data, we would expect the true mean engagement rate of Instagram posts would fall within this range 95% of samples. 
+
+The figures and analysis below use the original engagement rate percent as the metric. Recipients are accounted for in the statistical analysis.
+
+```{r, echo = FALSE, warning = FALSE}
+temp1 <- insta[!insta$rm & insta$Org == "FMT", ]
+pct_temp1 <- by(temp1$eng_rate_pct, temp1$weekday_f, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    Day = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp1$SD_Mean_Open_Rate <- by(temp1$eng_rate_pct, temp1$weekday_f, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp1$Lower_CI <- pct_temp1$Mean_Open_Rate - 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+pct_temp1$Upper_CI <- pct_temp1$Mean_Open_Rate + 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+
+pct_temp1$Day <- factor(pct_temp1$Day, levels = levels(insta$weekday_f))
+
+
+ggplot(pct_temp1) + 
+ geom_col(aes(x = Day, 
+              y = Mean_Open_Rate),
+          stat = "identity",
+          fill = hex[1]) +
+  geom_errorbar(aes(x = Day, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Day", y = "Engagement Rate (%)") +
+  ggtitle("Forward Montana", subtitle = "Instagram") + 
+  scale_y_continuous(limits = c(0, 14), 
+                     labels = seq(0, 14, 2), 
+                     breaks = seq(0, 14, 2)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, vjust = 0.65)) 
+
+
+temp2 <- insta[!insta$rm & insta$Org == "FMTF", ]
+pct_temp2 <- by(temp2$eng_rate_pct, temp2$weekday_f, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    Day = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp2$SD_Mean_Open_Rate <- by(temp2$eng_rate_pct, temp2$weekday_f, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp2$Lower_CI <- pct_temp2$Mean_Open_Rate - 1.96 * (pct_temp2$SD_Mean_Open_Rate / sqrt(nrow(temp2)))
+pct_temp2$Upper_CI <- pct_temp2$Mean_Open_Rate + 1.96 * (pct_temp2$SD_Mean_Open_Rate / sqrt(nrow(temp2)))
+
+pct_temp2$Day <- factor(pct_temp2$Day, levels = levels(insta$weekday_f))
+
+
+ggplot(pct_temp2) + 
+ geom_col(aes(x = Day, 
+              y = Mean_Open_Rate),
+          stat = "identity",
+          fill = hex[2]) +
+  geom_errorbar(aes(x = Day, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Day", y = "Engagement Rate (%)") + 
+  ggtitle("Forward Montana Foundation", subtitle = "Instagram") + 
+  scale_y_continuous(limits = c(0, 12), 
+                     labels = seq(0, 12, 2), 
+                     breaks = seq(0, 12, 2)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, vjust = 0.65)) 
+```
+
+The average engagement rate for Instagram posts is highest when Forward Montana posts on Thursday. The average engagement rate for Instagram posts is highest when Forward Montana Foundation posts on Monday.
+
+The average engagement rate for Forward Montana was 12% for posts on Thursday and below 10% for all other days. The average engagement rate for Forward Montana Foundation was 11% on Monday and below 10% for all other days.
+
+
+In conclusion, Thursday is the best day to post on Instagram for Forward Montana and Monday is the best day for Forward Montana Foundation to post on Instagram.
+
+
+### Hour of Day
+The figures below illustrate the relationship between engagement rate across hour of day. Hour of day is the hour the Instagram was posted, where if a post was sent at 12:37 PM the hour of day would be 12 PM. Note that axis text is in chronological order from left to right. 
+
+The bars indicate the 95% CI around the mean. This means that if we repeated collecting email data, we would expect the true mean engagement rate of Instagram posts would fall within this range 95% of samples.
+
+The figures and analysis below use the original engagement rate percent as the metric. 
+
+```{r, echo = FALSE, warning = FALSE}
+temp1 <- insta[!insta$rm & insta$Org == "FMT", ]
+pct_temp1 <- by(temp1$eng_rate_pct, temp1$hour_f, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    Hour = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp1$SD_Mean_Open_Rate <- by(temp1$eng_rate_pct, temp1$hour_f, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp1$Lower_CI <- pct_temp1$Mean_Open_Rate - 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+pct_temp1$Upper_CI <- pct_temp1$Mean_Open_Rate + 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+
+pct_temp1$Hour <- factor(pct_temp1$Hour, levels = levels(insta$hour_f))
+
+
+ggplot(pct_temp1) + 
+ geom_col(aes(x = Hour, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[1]) +
+  geom_errorbar(aes(x = Hour, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Hour of Day IG Posted", y = "Engagement Rate (%)") + 
+  ggtitle("Forward Montana", subtitle = "Instagram") + 
+  scale_y_continuous(limits = c(0, 18), 
+                     labels = seq(0, 18, 2), 
+                     breaks = seq(0, 18, 2)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 90, vjust = 0.65)) 
+
+
+temp2 <- insta[!insta$rm & insta$Org == "FMTF", ]
+pct_temp2 <- by(temp2$eng_rate_pct, temp2$hour_f, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    Hour = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp2$SD_Mean_Open_Rate <- by(temp2$eng_rate_pct, temp2$hour_f, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp2$Lower_CI <- pct_temp2$Mean_Open_Rate - 1.96 * (pct_temp2$SD_Mean_Open_Rate / sqrt(nrow(temp2)))
+pct_temp2$Upper_CI <- pct_temp2$Mean_Open_Rate + 1.96 * (pct_temp2$SD_Mean_Open_Rate / sqrt(nrow(temp2)))
+
+pct_temp2$Hour <- factor(pct_temp2$Hour, levels = levels(insta$hour_f))
+
+
+ggplot(pct_temp2) + 
+ geom_col(aes(x = Hour, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[2]) +
+  geom_errorbar(aes(x = Hour, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Hour of Day IG Posted", y = "Engagement Rate (%)") + 
+  ggtitle("Forward Montana Foundation", subtitle = "Instagram") + 
+  scale_y_continuous(limits = c(0, 18), 
+                     labels = seq(0, 18, 2), 
+                     breaks = seq(0, 18, 2)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 90, vjust = 0.65)) 
+```
+
+The average engagement rate is highest when Instagram posts are sent at 5PM for Forward Montana and 2PM for Forward Montana Foundation
+
+
+## Question 2
+Next, we'll look at whether a certain combination of weekday and hour of day has an effect on engagement rates. Hour of day is the hour the Instagram was posted, where if an Instagram was sent at 12:37 PM the hour of day would be 12 PM. Note that axis text is in chronological order from left to right. Not all days and hour combinations have had an Instagram posted, so the x axis only reflects days and hours combinations where an Instagram was posted 
+
+The figures and analysis below use the original engagement rate percent as the metric. 
+
+```{r, echo = FALSE, warning = FALSE}
+temp1 <- insta[!insta$rm & insta$Org == "FMT", ]
+pct_temp1 <- by(temp1$eng_rate_pct, temp1$day_hour, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    day_hour = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp1$SD_Mean_Open_Rate <- by(temp1$eng_rate_pct, temp1$day_hour, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp1$Lower_CI <- pct_temp1$Mean_Open_Rate - 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+pct_temp1$Upper_CI <- pct_temp1$Mean_Open_Rate + 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+
+pct_temp1$day_hour <- factor(pct_temp1$day_hour, levels = levels(insta$day_hour))
+pct_temp1 <- pct_temp1[!is.na(pct_temp1$Mean_Open_Rate), ]
+
+ggplot(pct_temp1) + 
+ geom_col(aes(x = day_hour, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[1]) +
+  # geom_errorbar(aes(x = day_hour, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Day & Hour", y = "Engagement Rate (%)") + 
+  ggtitle("Forward Montana", subtitle = "Instagram") + 
+  scale_y_continuous(limits = c(0, 22), 
+                     labels = seq(0, 22, 2), 
+                     breaks = seq(0, 22, 2)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 90)) 
+
+
+temp2 <- insta[!insta$rm & insta$Org == "FMTF", ]
+pct_temp2 <- by(temp2$eng_rate_pct, temp2$day_hour, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    day_hour = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp2$SD_Mean_Open_Rate <- by(temp2$eng_rate_pct, temp2$day_hour, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp2$Lower_CI <- pct_temp2$Mean_Open_Rate - 1.96 * (pct_temp2$SD_Mean_Open_Rate / sqrt(nrow(temp2)))
+pct_temp2$Upper_CI <- pct_temp2$Mean_Open_Rate + 1.96 * (pct_temp2$SD_Mean_Open_Rate / sqrt(nrow(temp2)))
+
+pct_temp2$day_hour <- factor(pct_temp2$day_hour, levels = levels(insta$day_hour))
+pct_temp2 <- pct_temp2[!is.na(pct_temp2$Mean_Open_Rate), ]
+
+ggplot(pct_temp2) + 
+ geom_col(aes(x = day_hour, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[2]) +
+  # geom_errorbar(aes(x = day_hour, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Day & Hour", y = "Engagement Rate (%)") + 
+  ggtitle("Forward Montana Foundation", subtitle = "Instagram") + 
+  scale_y_continuous(limits = c(0, 16), 
+                     labels = seq(0, 16, 2), 
+                     breaks = seq(0, 16, 2)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 90)) 
+```
+
+The average engagement rates were highest for Forward Montana Instagrams posted at Tuesday at 12PM, Thursday at 11AM, and Friday at 5PM, with average engagement rates of 20%, 17%, and 20% respectively. 
+
+The average engagement rates were highest for Forward Montana Foundation Instagrams posted Mondays at 8AM, with an average engagement rate of 14%.
+
+
+## Question 3
+The third question was how the frequency of Instagram posts influenced engagement rates? First, the relationship between engagement rate and frequency of Instagrams postsed in a month, week, or day are shown. 
+
+### Monthly Frequency 
+The figures below illustrate the relationship between engagement rate across different frequencies of monthly posts. The bars indicate the 95% CI around the mean. This means that if we repeated collecting Instagram data, we would expect the true mean engagement rate of Instagram posts would fall within this range in 95% of samples. 
+
+The figures and analysis below use the original engagement rate percent as the metric. 
+
+```{r, echo = FALSE, warning = FALSE}
+temp1 <- insta[!insta$rm & insta$Org == "FMT", ]
+pct_temp1 <- by(temp1$eng_rate_pct, temp1$month_freq, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    month_freq = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp1$SD_Mean_Open_Rate <- by(temp1$eng_rate_pct, temp1$month_freq, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp1$Lower_CI <- pct_temp1$Mean_Open_Rate - 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+pct_temp1$Upper_CI <- pct_temp1$Mean_Open_Rate + 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+
+pct_temp1$month_freq <- factor(pct_temp1$month_freq, levels = unique(pct_temp1$month_freq))
+
+
+ggplot(pct_temp1) + 
+ geom_col(aes(x = month_freq, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[1]) +
+  geom_errorbar(aes(x = month_freq, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Number of IG Posts in a Month", y = "Engagement Rate (%)", title = "Forward Montana") + 
+  scale_y_continuous(limits = c(0, 13), 
+                     labels = seq(0, 13, 1), 
+                     breaks = seq(0, 13, 1)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, vjust = 0.65)) 
+
+
+temp2 <- insta[!insta$rm & insta$Org == "FMTF", ]
+pct_temp2 <- by(temp2$eng_rate_pct, temp2$month_freq, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    month_freq = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp2$SD_Mean_Open_Rate <- by(temp2$eng_rate_pct, temp2$month_freq, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp2$Lower_CI <- pct_temp2$Mean_Open_Rate - 1.96 * (pct_temp2$SD_Mean_Open_Rate / sqrt(nrow(temp2)))
+pct_temp2$Upper_CI <- pct_temp2$Mean_Open_Rate + 1.96 * (pct_temp2$SD_Mean_Open_Rate / sqrt(nrow(temp2)))
+
+pct_temp2$month_freq <- factor(pct_temp2$month_freq, levels = unique(pct_temp2$month_freq))
+
+
+ggplot(pct_temp2) + 
+ geom_col(aes(x = month_freq, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[2]) +
+  geom_errorbar(aes(x = month_freq, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Number of IG Posts in a Month", y = "Engagement Rate (%)", title = "Forward Montana Foundation") + 
+  scale_y_continuous(limits = c(0, 14), 
+                     labels = seq(0, 14, 2), 
+                     breaks = seq(0, 14, 2)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, vjust = 0.65)) 
+```
+
+The mean engagement rate for Forward Montana was highest with 8 IG posts in a month and declining with more posts per month. At Forward Montana Foundation, the highest mean engagement rate was with 3 IG posts in a month and declining with more posts per month.
+
+
+
+### Weekly Frequency 
+The figures below illustrate the relationship between engagement rate across different frequencies of weekly posts. The bars indicate the 95% CI around the mean. This means that if we repeated collecting Instagram data, we would expect the true mean engagement rate of Instagram posts would fall within this range in 95% of samples. 
+
+The figures and analysis below use the original engagement rate percent as the metric. 
+
+```{r, echo = FALSE, warning = FALSE}
+temp1 <- insta[!insta$rm & insta$Org == "FMT", ]
+pct_temp1 <- by(temp1$eng_rate_pct, temp1$week_freq, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    week_freq = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp1$SD_Mean_Open_Rate <- by(temp1$eng_rate_pct, temp1$week_freq, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp1$Lower_CI <- pct_temp1$Mean_Open_Rate - 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+pct_temp1$Upper_CI <- pct_temp1$Mean_Open_Rate + 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+
+pct_temp1$week_freq <- factor(pct_temp1$week_freq, levels = unique(pct_temp1$week_freq))
+
+
+ggplot(pct_temp1) + 
+ geom_col(aes(x = week_freq, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[1]) +
+  geom_errorbar(aes(x = week_freq, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Number of IG Posts in a Week", y = "Engagement Rate (%)", title = "Forward Montana") + 
+  scale_y_continuous(limits = c(0, 13), 
+                     labels = seq(0, 13, 1), 
+                     breaks = seq(0, 13, 1)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, vjust = 0.65)) 
+
+
+temp2 <- insta[!insta$rm & insta$Org == "FMTF", ]
+pct_temp2 <- by(temp2$eng_rate_pct, temp2$week_freq, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    week_freq = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp2$SD_Mean_Open_Rate <- by(temp2$eng_rate_pct, temp2$week_freq, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp2$Lower_CI <- pct_temp2$Mean_Open_Rate - 1.96 * (pct_temp2$SD_Mean_Open_Rate / sqrt(nrow(temp2)))
+pct_temp2$Upper_CI <- pct_temp2$Mean_Open_Rate + 1.96 * (pct_temp2$SD_Mean_Open_Rate / sqrt(nrow(temp2)))
+
+pct_temp2$week_freq <- factor(pct_temp2$week_freq, levels = unique(pct_temp2$week_freq))
+
+
+ggplot(pct_temp2) + 
+ geom_col(aes(x = week_freq, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[2]) +
+  geom_errorbar(aes(x = week_freq, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Number of IG Posts in a Week", y = "Engagement Rate (%)", title = "Forward Montana Foundation") + 
+  scale_y_continuous(limits = c(0, 14), 
+                     labels = seq(0, 14, 2), 
+                     breaks = seq(0, 14, 2)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, vjust = 0.65)) 
+```
+
+The mean engagement rate for Forward Montana was highest with 1-3 IG posts in a week and declining with more that 3 posts per week. At Forward Montana Foundation, there was inconclusive evidence, with 1 or 3 IG posts having higher mean engagement compared to 2 or 4 IG posts in a week.
+
+
+### Daily Frequency 
+The figures below illustrate the relationship between engagement rate across different frequencies of daily posts. The bars indicate the 95% CI around the mean. This means that if we repeated collecting Instagram data, we would expect the true mean engagement rate of Instagram posts would fall within this range in 95% of samples. 
+
+The figures and analysis below use the original engagement rate percent as the metric. 
+
+```{r, echo = FALSE, warning = FALSE}
+temp1 <- insta[!insta$rm & insta$Org == "FMT", ]
+pct_temp1 <- by(temp1$eng_rate_pct, temp1$day_freq, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    day_freq = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp1$SD_Mean_Open_Rate <- by(temp1$eng_rate_pct, temp1$day_freq, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp1$Lower_CI <- pct_temp1$Mean_Open_Rate - 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+pct_temp1$Upper_CI <- pct_temp1$Mean_Open_Rate + 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+
+pct_temp1$day_freq <- factor(pct_temp1$day_freq, levels = unique(pct_temp1$day_freq))
+
+
+ggplot(pct_temp1) + 
+ geom_col(aes(x = day_freq, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[1]) +
+  geom_errorbar(aes(x = day_freq, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Number of IG Posts in a Day", y = "Engagement Rate (%)", title = "Forward Montana") + 
+  scale_y_continuous(limits = c(0, 14), 
+                     labels = seq(0, 14, 2), 
+                     breaks = seq(0, 14, 2)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, vjust = 0.65)) 
+
+
+temp2 <- insta[!insta$rm & insta$Org == "FMTF", ]
+pct_temp2 <- by(temp2$eng_rate_pct, temp2$day_freq, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    day_freq = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp2$SD_Mean_Open_Rate <- by(temp2$eng_rate_pct, temp2$day_freq, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp2$Lower_CI <- pct_temp2$Mean_Open_Rate - 1.96 * (pct_temp2$SD_Mean_Open_Rate / sqrt(nrow(temp2)))
+pct_temp2$Upper_CI <- pct_temp2$Mean_Open_Rate + 1.96 * (pct_temp2$SD_Mean_Open_Rate / sqrt(nrow(temp2)))
+
+pct_temp2$day_freq <- factor(pct_temp2$day_freq, levels = unique(pct_temp2$day_freq))
+
+
+ggplot(pct_temp2) + 
+ geom_col(aes(x = day_freq, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[2]) +
+  geom_errorbar(aes(x = day_freq, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Number of IG Posts in a Day", y = "Engagement Rate (%)", title = "Forward Montana Foundation") + 
+  scale_y_continuous(limits = c(0, 10), 
+                     labels = seq(0, 10, 1), 
+                     breaks = seq(0, 10, 1)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, vjust = 0.65)) 
+```
+
+The mean engagement rate for Forward Montana was highest with 2 IG posts in a day and least with 5 posts per day. At Forward Montana Foundation, only 1 post per day has ever been done so no comparisons.
+
+
+## Question 4
+The fourth question asked was whether graphics or photos had higher engagement rates for Instagram posts at each organization.
+
+```{r, warning = FALSE, echo = FALSE}
+insta[grep("Video", insta$g_or_p), "rm"] <- TRUE
+insta[is.na(insta$g_or_p), "rm"] <- TRUE
+ggplot(insta[!insta$rm, ]) + 
+  geom_boxplot(aes(x = g_or_p_f, y = eng_rate_pct, fill = Org)) +
+  scale_fill_manual(name = "Organization", values = hex) + 
+  labs(x = "Instagram Post Type", y = "Engagement Rate (%)") + 
+  scale_y_continuous(limits = c(0, 30), labels = seq(0, 30, 5), breaks = seq(0, 30, 5)) +
+  theme_bw()
+```
+
+It is clear from looking at the distribution of engagement rates for each IG post type from both organizations that engagement rate is highest for just photo posts. Points in the figure above indicate outliers. Bars in the boxes indicate the median. Posts with graphics had the second highest average engagement rate at both organizations, while both a photo and a graphic had the lowest average engagement rate. 
+
+
+# Facebook
+Report about Facebook communications from Forward Montana (FMT). The summary and conclusion are short summaries of conclusions related to the following questions. The section for each question contains figures and more detailed interpretation.
+
+## Summary
+Analysis below is for addressing the following questions about Facebook communications;
+
+1) What day of the week and time of day have the highest engagement rates, for each organization?
+
+
+2) What combination of day and time had highest engagement rates, when accounting for organization?
+
+
+3) How does frequency of posts influence engagement rates for each organization?
+
+
+4) Do graphics or photos have higher engagement rates?
+
+
+The answers were; 
+
+1) Tuesday is the day of the week with the highest engagement rates for both organizations. At Forward Montana, posting at 1PM resulted in the highest average engagement rate while 1-3PM resulted in the highest average engagement rate for Forward Montana Foundation FB posts..
+
+2) The average engagement rate was highest for both organizations when FB posts were sent Tuesday at 1PM.
+
+3) Engagement rate tended to increase with FB post frequency across a month, with Forward Montana receiving the highest engagement rate with 5 FB posts per month while Forward Montana Foundation received the highest average engagement rate with 4 FB posts per month. Engagement rate decreased with more FB posts per week however. At Forward Montana, 2 posts per week had the highest engagement rate compared to 1 or 3 posts per week while at Forward Montana Foundation, 1 post per week had a higher mean engagmeent than 2 posts per week. However, there was no difference in engagmeent at Forward Montana between 1 or 2 FB posts per day.
+
+4) At both organizations, Facebook posts with just photos had the highest average engagement rates compared to graphics or both a graphic or photo. Additionally, both a graphic and photo in a FB post had higher engagement rates than FB posts with just a graphic.
+
+
+Quick statistics on Facebook data;
+```{r, echo = FALSE}
+fb_fmt <- fb[fb$Org == "FMT", ]
+temp <- data.frame(Metric = c("Average Engagement Rate", 
+                              "Average FB Posts per Month", 
+                              "Average FB Posts per Week", 
+                              "Average FB Posts per Day"), 
+                   Value = c(mean(fb_fmt$eng_rate_pct, na.rm = TRUE) %>% round(2), 
+                             mean(fb_fmt$month_freq, na.rm = TRUE) %>% round(2), 
+                             mean(fb_fmt$week_freq, na.rm = TRUE) %>% round(2), 
+                             mean(fb_fmt$day_freq, na.rm = TRUE) %>% round(2)),
+                   Rounded = c(mean(fb_fmt$eng_rate_pct, na.rm = TRUE) %>% round(0), 
+                             mean(fb_fmt$month_freq, na.rm = TRUE) %>% round(0), 
+                             mean(fb_fmt$week_freq, na.rm = TRUE) %>% round(0), 
+                             mean(fb_fmt$day_freq, na.rm = TRUE) %>% round(0)))
+kable(temp, caption = "Summary statistics of FMT Facebook communications.") %>%
+  kable_styling(font_size = 16, position = "center")
+
+
+
+fb_fmtf <- fb[fb$Org == "FMTF", ]
+temp <- data.frame(Metric = c("Average Engagement Rate", 
+                              "Average FB Posts per Month", 
+                              "Average FB Posts per Week", 
+                              "Average FB Posts per Day"), 
+                   Value = c(mean(fb_fmtf$eng_rate_pct, na.rm = TRUE) %>% round(2), 
+                             mean(fb_fmtf$month_freq, na.rm = TRUE) %>% round(2), 
+                             mean(fb_fmtf$week_freq, na.rm = TRUE) %>% round(2), 
+                             mean(fb_fmtf$day_freq, na.rm = TRUE) %>% round(2)),
+                   Rounded = c(mean(fb_fmtf$eng_rate_pct, na.rm = TRUE) %>% round(0), 
+                             mean(fb_fmtf$month_freq, na.rm = TRUE) %>% round(0), 
+                             mean(fb_fmtf$week_freq, na.rm = TRUE) %>% round(0), 
+                             mean(fb_fmtf$day_freq, na.rm = TRUE) %>% round(0)))
+kable(temp, caption = "Summary statistics of FMTF Facebook communications.") %>%
+  kable_styling(font_size = 16, position = "center")
+```
+
+## Question 1
+What day of the week and time of day have the highest engagement rates, for each organization?
+
+### Day of Week
+The figures below illustrate the relationship between engagement rate across weekdays. The bars indicate the 95% CI around the mean. This means that if we repeated collecting email data, we would expect the true mean engagement rate of Facebook posts would fall within this range 95% of samples. 
+
+The figures and analysis below use the original engagement rate percent as the metric. Recipients are accounted for in the statistical analysis.
+
+```{r, echo = FALSE, warning = FALSE}
+temp1 <- fb[!fb$rm & fb$Org == "FMT", ]
+pct_temp1 <- by(temp1$eng_rate_pct, temp1$weekday_f, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    Day = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp1$SD_Mean_Open_Rate <- by(temp1$eng_rate_pct, temp1$weekday_f, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp1$Lower_CI <- pct_temp1$Mean_Open_Rate - 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+pct_temp1$Upper_CI <- pct_temp1$Mean_Open_Rate + 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+
+pct_temp1$Day <- factor(pct_temp1$Day, levels = levels(fb$weekday_f))
+
+
+ggplot(pct_temp1) + 
+ geom_col(aes(x = Day, 
+              y = Mean_Open_Rate),
+          stat = "identity",
+          fill = hex[1]) +
+  geom_errorbar(aes(x = Day, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Day", y = "Engagement Rate (%)") + 
+  ggtitle("Forward Montana", subtitle = "Facebook") + 
+  scale_y_continuous(limits = c(0, 7), 
+                     labels = seq(0, 7, 1), 
+                     breaks = seq(0, 7, 1)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, vjust = 0.65)) 
+
+
+temp2 <- fb[!fb$rm & fb$Org == "FMTF", ]
+pct_temp2 <- by(temp2$eng_rate_pct, temp2$weekday_f, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    Day = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp2$SD_Mean_Open_Rate <- by(temp2$eng_rate_pct, temp2$weekday_f, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp2$Lower_CI <- pct_temp2$Mean_Open_Rate - 1.96 * (pct_temp2$SD_Mean_Open_Rate / sqrt(nrow(temp2)))
+pct_temp2$Upper_CI <- pct_temp2$Mean_Open_Rate + 1.96 * (pct_temp2$SD_Mean_Open_Rate / sqrt(nrow(temp2)))
+
+pct_temp2$Day <- factor(pct_temp2$Day, levels = levels(fb$weekday_f))
+
+
+ggplot(pct_temp2) + 
+ geom_col(aes(x = Day, 
+              y = Mean_Open_Rate),
+          stat = "identity",
+          fill = hex[2]) +
+  geom_errorbar(aes(x = Day, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Day", y = "Engagement Rate (%)") + 
+  ggtitle("Forward Montana Foundation", subtitle = "Facebook") + 
+  scale_y_continuous(limits = c(0, 11), 
+                     labels = seq(0, 11, 1), 
+                     breaks = seq(0, 11, 1)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, vjust = 0.65)) 
+```
+
+The average engagement rate for Facebook posts is highest when Forward Montana posts on Sunday or Tuesday and Forward Montana Foundation post on Tuesday.
+
+The average engagement rate for Forward Montana was 5.4% for posts on Tuesday and 5% for FB posts on Sunday. Forward Montana Foundation had mean engagement rates of 10% on Tuesday and 7% on Thursday while remainaing below 5% for all other days. 
+
+In conclusion, Tuesday is the best day to post on Facebook for Forward Montana or Forward Montana Foundation.
+
+
+### Hour of Day
+The figures below illustrate the relationship between engagement rate across hour of day. Hour of day is the hour the Facebook was posted, where if a post was sent at 12:37 PM the hour of day would be 12 PM. Note that axis text is in chronological order from left to right. 
+
+The bars indicate the 95% CI around the mean. This means that if we repeated collecting email data, we would expect the true mean engagement rate of Facebook posts would fall within this range 95% of samples.
+
+The figures and analysis below use the original engagement rate percent as the metric. 
+
+```{r, echo = FALSE, warning = FALSE}
+temp1 <- fb[!fb$rm & fb$Org == "FMT", ]
+pct_temp1 <- by(temp1$eng_rate_pct, temp1$hour_f, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    Hour = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp1$SD_Mean_Open_Rate <- by(temp1$eng_rate_pct, temp1$hour_f, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp1$Lower_CI <- pct_temp1$Mean_Open_Rate - 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+pct_temp1$Upper_CI <- pct_temp1$Mean_Open_Rate + 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+
+pct_temp1$Hour <- factor(pct_temp1$Hour, levels = levels(fb$hour_f))
+
+
+ggplot(pct_temp1) + 
+ geom_col(aes(x = Hour, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[1]) +
+  geom_errorbar(aes(x = Hour, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Hour of Day of FB Post", y = "Engagement Rate (%)") + 
+  ggtitle("Forward Montana", subtitle = "Facebook") + 
+  scale_y_continuous(limits = c(0, 8), 
+                     labels = seq(0, 8, 2), 
+                     breaks = seq(0, 8, 2)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 90, vjust = 0.65)) 
+
+
+temp2 <- fb[!fb$rm & fb$Org == "FMTF", ]
+pct_temp2 <- by(temp2$eng_rate_pct, temp2$hour_f, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    Hour = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp2$SD_Mean_Open_Rate <- by(temp2$eng_rate_pct, temp2$hour_f, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp2$Lower_CI <- pct_temp2$Mean_Open_Rate - 1.96 * (pct_temp2$SD_Mean_Open_Rate / sqrt(nrow(temp2)))
+pct_temp2$Upper_CI <- pct_temp2$Mean_Open_Rate + 1.96 * (pct_temp2$SD_Mean_Open_Rate / sqrt(nrow(temp2)))
+
+pct_temp2$Hour <- factor(pct_temp2$Hour, levels = levels(fb$hour_f))
+
+
+ggplot(pct_temp2) + 
+ geom_col(aes(x = Hour, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[2]) +
+  geom_errorbar(aes(x = Hour, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Hour of Day of FB Post", y = "Engagement Rate (%)") + 
+  ggtitle("Forward Montana Foundation", subtitle = "Facebook") + 
+  scale_y_continuous(limits = c(0, 9), 
+                     labels = seq(0, 9, 1), 
+                     breaks = seq(0, 9, 1)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 90, vjust = 0.65)) 
+```
+
+The average engagement rate is highest when Facebook posts are sent at 1PM for Forward Montana and 3-5PM for Facebook posts sent by Forward Montana Foundation. Mornings do not appear to be a time to post on FB and expect high engagement rates.
+
+
+## Question 2
+Next, we'll look at whether a certain combination of weekday and hour of day has an effect on engagement rates. Hour of day is the hour the Facebook was posted, where if an Facebook was sent at 12:37 PM the hour of day would be 12 PM. Note that axis text is in chronological order from left to right. Not all days and hour combinations have had an Facebook posted, so the x axis only reflects days and hours combinations where an Facebook was posted 
+
+The figures and analysis below use the original engagement rate percent as the metric. 
+
+```{r, echo = FALSE, warning = FALSE}
+temp1 <- fb[!fb$rm & fb$Org == "FMT", ]
+pct_temp1 <- by(temp1$eng_rate_pct, temp1$day_hour, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    day_hour = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp1$SD_Mean_Open_Rate <- by(temp1$eng_rate_pct, temp1$day_hour, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp1$Lower_CI <- pct_temp1$Mean_Open_Rate - 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+pct_temp1$Upper_CI <- pct_temp1$Mean_Open_Rate + 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+
+pct_temp1$day_hour <- factor(pct_temp1$day_hour, levels = levels(fb$day_hour))
+pct_temp1 <- pct_temp1[!is.na(pct_temp1$Mean_Open_Rate), ]
+
+ggplot(pct_temp1) + 
+ geom_col(aes(x = day_hour, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[1]) +
+  # geom_errorbar(aes(x = day_hour, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Day & Hour", y = "Engagement Rate (%)") + 
+  ggtitle("Forward Montana", subtitle = "Facebook") + 
+  scale_y_continuous(limits = c(0, 11), 
+                     labels = seq(0, 11, 1), 
+                     breaks = seq(0, 11, 1)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 90)) 
+
+
+temp2 <- fb[!fb$rm & fb$Org == "FMTF", ]
+pct_temp2 <- by(temp2$eng_rate_pct, temp2$day_hour, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    day_hour = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp2$SD_Mean_Open_Rate <- by(temp2$eng_rate_pct, temp2$day_hour, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp2$Lower_CI <- pct_temp2$Mean_Open_Rate - 1.96 * (pct_temp2$SD_Mean_Open_Rate / sqrt(nrow(temp2)))
+pct_temp2$Upper_CI <- pct_temp2$Mean_Open_Rate + 1.96 * (pct_temp2$SD_Mean_Open_Rate / sqrt(nrow(temp2)))
+
+pct_temp2$day_hour <- factor(pct_temp2$day_hour, levels = levels(fb$day_hour))
+pct_temp2 <- pct_temp2[!is.na(pct_temp2$Mean_Open_Rate), ]
+
+ggplot(pct_temp2) + 
+ geom_col(aes(x = day_hour, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[2]) +
+  # geom_errorbar(aes(x = day_hour, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Day & Hour", y = "Engagement Rate (%)") + 
+  ggtitle("Forward Montana Foundation", subtitle = "Facebook") + 
+  scale_y_continuous(limits = c(0, 11), 
+                     labels = seq(0, 11, 1), 
+                     breaks = seq(0, 11, 1)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 90)) 
+```
+
+For both organizations, Tuesday at 1PM resulted in FB posts with the highest average engagement rates, around 10%.
+
+
+## Question 3
+The third question was how the frequency of Facebook posts influenced engagement rates? First, the relationship between engagement rate and frequency of Instagrams postsed in a month, week, or day are shown. 
+
+### Monthly Frequency 
+The figures below illustrate the relationship between engagement rate across different frequencies of monthly posts. The bars indicate the 95% CI around the mean. This means that if we repeated collecting Facebook data, we would expect the true mean engagement rate of Facebook posts would fall within this range in 95% of samples. 
+
+The figures and analysis below use the original engagement rate percent as the metric. 
+
+```{r, echo = FALSE, warning = FALSE}
+temp1 <- fb[!fb$rm & fb$Org == "FMT", ]
+pct_temp1 <- by(temp1$eng_rate_pct, temp1$month_freq, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    month_freq = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp1$SD_Mean_Open_Rate <- by(temp1$eng_rate_pct, temp1$month_freq, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp1$Lower_CI <- pct_temp1$Mean_Open_Rate - 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+pct_temp1$Upper_CI <- pct_temp1$Mean_Open_Rate + 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+
+pct_temp1$month_freq <- factor(pct_temp1$month_freq, levels = unique(pct_temp1$month_freq))
+
+
+ggplot(pct_temp1) + 
+ geom_col(aes(x = month_freq, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[1]) +
+  geom_errorbar(aes(x = month_freq, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Number of FB Posts in a Month", y = "Engagement Rate (%)", title = "Forward Montana") + 
+  scale_y_continuous(limits = c(0, 8), 
+                     labels = seq(0, 8, 2), 
+                     breaks = seq(0, 8, 2)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, vjust = 0.65)) 
+
+
+temp2 <- fb[!fb$rm & fb$Org == "FMTF", ]
+pct_temp2 <- by(temp2$eng_rate_pct, temp2$month_freq, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    month_freq = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp2$SD_Mean_Open_Rate <- by(temp2$eng_rate_pct, temp2$month_freq, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp2$Lower_CI <- pct_temp2$Mean_Open_Rate - 1.96 * (pct_temp2$SD_Mean_Open_Rate / sqrt(nrow(temp2)))
+pct_temp2$Upper_CI <- pct_temp2$Mean_Open_Rate + 1.96 * (pct_temp2$SD_Mean_Open_Rate / sqrt(nrow(temp2)))
+
+pct_temp2$month_freq <- factor(pct_temp2$month_freq, levels = unique(pct_temp2$month_freq))
+
+
+ggplot(pct_temp2) + 
+ geom_col(aes(x = month_freq, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[2]) +
+  geom_errorbar(aes(x = month_freq, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Number of FB Posts in a Month", y = "Engagement Rate (%)", title = "Forward Montana Foundation") + 
+  scale_y_continuous(limits = c(0, 8), 
+                     labels = seq(0, 8, 2), 
+                     breaks = seq(0, 8, 2)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, vjust = 0.65)) 
+```
+
+The mean engagement rate for Forward Montana was highest with 5 FB posts in a month and declining with more posts per month. At Forward Montana Foundation, the highest mean engagement rate was with 4 FB posts in a month where engagement increased from 1-4 FB posts per month.
+
+
+
+### Weekly Frequency 
+The figures below illustrate the relationship between engagement rate across different frequencies of weekly posts. The bars indicate the 95% CI around the mean. This means that if we repeated collecting Facebook data, we would expect the true mean engagement rate of Facebook posts would fall within this range in 95% of samples. 
+
+The figures and analysis below use the original engagement rate percent as the metric. 
+
+```{r, echo = FALSE, warning = FALSE}
+temp1 <- fb[!fb$rm & fb$Org == "FMT", ]
+pct_temp1 <- by(temp1$eng_rate_pct, temp1$week_freq, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    week_freq = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp1$SD_Mean_Open_Rate <- by(temp1$eng_rate_pct, temp1$week_freq, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp1$Lower_CI <- pct_temp1$Mean_Open_Rate - 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+pct_temp1$Upper_CI <- pct_temp1$Mean_Open_Rate + 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+
+pct_temp1$week_freq <- factor(pct_temp1$week_freq, levels = unique(pct_temp1$week_freq))
+
+
+ggplot(pct_temp1) + 
+ geom_col(aes(x = week_freq, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[1]) +
+  geom_errorbar(aes(x = week_freq, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Number of FB Posts in a Week", y = "Engagement Rate (%)", title = "Forward Montana") + 
+  scale_y_continuous(limits = c(0, 7), 
+                     labels = seq(0, 7, 1), 
+                     breaks = seq(0, 7, 1)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, vjust = 0.65)) 
+
+
+temp2 <- fb[!fb$rm & fb$Org == "FMTF", ]
+pct_temp2 <- by(temp2$eng_rate_pct, temp2$week_freq, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    week_freq = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp2$SD_Mean_Open_Rate <- by(temp2$eng_rate_pct, temp2$week_freq, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp2$Lower_CI <- pct_temp2$Mean_Open_Rate - 1.96 * (pct_temp2$SD_Mean_Open_Rate / sqrt(nrow(temp2)))
+pct_temp2$Upper_CI <- pct_temp2$Mean_Open_Rate + 1.96 * (pct_temp2$SD_Mean_Open_Rate / sqrt(nrow(temp2)))
+
+pct_temp2$week_freq <- factor(pct_temp2$week_freq, levels = unique(pct_temp2$week_freq))
+
+
+ggplot(pct_temp2) + 
+ geom_col(aes(x = week_freq, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[2]) +
+  geom_errorbar(aes(x = week_freq, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Number of FB Posts in a Week", y = "Engagement Rate (%)", title = "Forward Montana Foundation") + 
+  scale_y_continuous(limits = c(0, 7), 
+                     labels = seq(0, 7, 1), 
+                     breaks = seq(0, 7, 1)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, vjust = 0.65)) 
+```
+
+The mean engagement rate for Forward Montana was highest with 2 FB posts in a week and declining with 3 posts per week. At Forward Montana Foundation, 1 FB post per week had the highest mean engagement compared to 2 FB posts per week.
+
+
+### Daily Frequency 
+The figures below illustrate the relationship between engagement rate across different frequencies of daily posts. The bars indicate the 95% CI around the mean. This means that if we repeated collecting Facebook data, we would expect the true mean engagement rate of Facebook posts would fall within this range in 95% of samples. 
+
+The figures and analysis below use the original engagement rate percent as the metric. 
+
+```{r, echo = FALSE, warning = FALSE}
+temp1 <- fb[!fb$rm & fb$Org == "FMT", ]
+pct_temp1 <- by(temp1$eng_rate_pct, temp1$day_freq, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    day_freq = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp1$SD_Mean_Open_Rate <- by(temp1$eng_rate_pct, temp1$day_freq, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp1$Lower_CI <- pct_temp1$Mean_Open_Rate - 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+pct_temp1$Upper_CI <- pct_temp1$Mean_Open_Rate + 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+
+pct_temp1$day_freq <- factor(pct_temp1$day_freq, levels = unique(pct_temp1$day_freq))
+
+
+ggplot(pct_temp1) + 
+ geom_col(aes(x = day_freq, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[1]) +
+  geom_errorbar(aes(x = day_freq, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Number of FB Posts in a Day", y = "Engagement Rate (%)", title = "Forward Montana") + 
+  scale_y_continuous(limits = c(0, 6), 
+                     labels = seq(0, 6, 1), 
+                     breaks = seq(0, 6, 1)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, vjust = 0.65)) 
+
+
+temp2 <- fb[!fb$rm & fb$Org == "FMTF", ]
+pct_temp2 <- by(temp2$eng_rate_pct, temp2$day_freq, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    day_freq = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp2$SD_Mean_Open_Rate <- by(temp2$eng_rate_pct, temp2$day_freq, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp2$Lower_CI <- pct_temp2$Mean_Open_Rate - 1.96 * (pct_temp2$SD_Mean_Open_Rate / sqrt(nrow(temp2)))
+pct_temp2$Upper_CI <- pct_temp2$Mean_Open_Rate + 1.96 * (pct_temp2$SD_Mean_Open_Rate / sqrt(nrow(temp2)))
+
+pct_temp2$day_freq <- factor(pct_temp2$day_freq, levels = unique(pct_temp2$day_freq))
+
+
+ggplot(pct_temp2) + 
+ geom_col(aes(x = day_freq, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[2]) +
+  geom_errorbar(aes(x = day_freq, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Number of FB Posts in a Day", y = "Engagement Rate (%)", title = "Forward Montana Foundation") + 
+  scale_y_continuous(limits = c(0, 7), 
+                     labels = seq(0, 7, 1), 
+                     breaks = seq(0, 7, 1)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, vjust = 0.65)) 
+```
+
+The mean engagement rate for Forward Montana was no different between 1 or 2 FB posts per day. Only one FB post has been done per day by Forward Montana Foundation so no conclusion.
+
+
+## Question 4
+The fourth question asked was whether graphics or photos had higher engagement rates for Facebook posts at each organization.
+
+```{r, warning = FALSE, echo = FALSE}
+fb[grep("Video", fb$g_or_p), "rm"] <- TRUE
+fb[is.na(fb$g_or_p), "rm"] <- TRUE
+ggplot(fb[!fb$rm, ]) + 
+  geom_boxplot(aes(x = g_or_p_f, y = eng_rate_pct, fill = Org)) +
+  scale_fill_manual(name = "Organization", values = hex) + 
+  labs(x = "Facebook Post Type", y = "Engagement Rate (%)") + 
+  scale_y_continuous(limits = c(0, 12.5), labels = seq(0, 12.5, 2.5), breaks = seq(0, 12.5, 2.5)) +
+  theme_bw()
+```
+
+Similar to IG posts, FB posts with just photos tended to have higher mean engagement rates compared to FB posts with just graphics. However, both a photo and graphic had higher engagement rates than just graphics in FB posts. These trends were consistent across both organizations.
+
+
+# TikTok
+Report about TikTok communications from Forward Montana (FMT). The summary and conclusion are short summaries of conclusions related to the following questions. The section for each question contains figures and more detailed interpretation.
+
+## Summary
+Analysis below is for addressing the following questions about TikTok communications;
+
+1) What day of the week and time of day have the highest likes per plays?
+
+
+2) What combination of day and time had highest likes per plays?
+
+
+3) How does posting frequency influence likes per plays?
+
+
+The answers were; 
+
+1) The highest percent of likes per views/plays (like rate) was on Wednesday, with a clear pattern indicating that like rates are highest when TikToks are posted Tuesday - Thursday. The highet like rate occurs when TikToks are posted at 12PM or 3PM.
+
+2) Wednesday at 12PM resulted in the highest average like rate for TikToks. Wednesday at 9AM and 3PM also resulted in high like rates above 8%, followed by Thursday at 1PM.
+
+3) There was no pattern between like rate and the monthly frequency of TikTok posts. The like rate increased with more TikToks posted per week however, indicating that posting 3 TikToks in a week results in higher average engagement than only posting 1 or 2 TikToks per week.
+
+
+Quick statistics on TikTok data;
+```{r, echo = FALSE}
+temp <- data.frame(Metric = c("Average Like Rate", 
+                              "Average TikTok Posts per Month", 
+                              "Average TikTok Posts per Week", 
+                              "Average TikTok Posts per Day"), 
+                   Value = c(mean(tt$like_pct, na.rm = TRUE) %>% round(2), 
+                             mean(tt$month_freq, na.rm = TRUE) %>% round(2), 
+                             mean(tt$week_freq, na.rm = TRUE) %>% round(2), 
+                             mean(tt$day_freq, na.rm = TRUE) %>% round(2)),
+                   Rounded = c(mean(tt$like_pct, na.rm = TRUE) %>% round(0), 
+                             mean(tt$month_freq, na.rm = TRUE) %>% round(0), 
+                             mean(tt$week_freq, na.rm = TRUE) %>% round(0), 
+                             mean(tt$day_freq, na.rm = TRUE) %>% round(0)))
+kable(temp, caption = "Summary statistics of FMT TikTok communications.") %>%
+  kable_styling(font_size = 16, position = "center")
+```
+
+## Question 1
+What day of the week and time of day have the highest like rates, for each organization?
+
+### Day of Week
+The figures below illustrate the relationship between like rate across weekdays. The bars indicate the 95% CI around the mean. This means that if we repeated collecting email data, we would expect the true mean like rate of TikTok posts would fall within this range 95% of samples. 
+
+The figures and analysis below use the original like rate percent as the metric. Recipients are accounted for in the statistical analysis.
+
+```{r, echo = FALSE, warning = FALSE}
+temp1 <- tt[!tt$rm, ]
+pct_temp1 <- by(temp1$like_pct, temp1$weekday_f, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    Day = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp1$SD_Mean_Open_Rate <- by(temp1$like_pct, temp1$weekday_f, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp1$Lower_CI <- pct_temp1$Mean_Open_Rate - 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+pct_temp1$Upper_CI <- pct_temp1$Mean_Open_Rate + 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+
+pct_temp1$Day <- factor(pct_temp1$Day, levels = levels(tt$weekday_f))
+
+
+ggplot(pct_temp1) + 
+ geom_col(aes(x = Day, 
+              y = Mean_Open_Rate),
+          stat = "identity",
+          fill = hex[1]) +
+  geom_errorbar(aes(x = Day, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Day", y = "Like Rate (%)") + 
+  ggtitle("Forward Montana", subtitle = "TikTok") + 
+  scale_y_continuous(limits = c(0, 14), 
+                     labels = seq(0, 14, 2), 
+                     breaks = seq(0, 14, 2)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, vjust = 0.65)) 
+```
+
+The average like rate for TikTok posts is highest on Wednesday, but clearly best during the middle of the week (Tue. - Th.) compared to Monday or Friday. The percent of likes per views/plays was 7-9% Tuesday through Thursday and 3-5% on Monday and Friday.
+
+
+
+### Hour of Day
+The figures below illustrate the relationship between like rate across hour of day. Hour of day is the hour the TikTok was posted, where if a post was sent at 12:37 PM the hour of day would be 12 PM. Note that axis text is in chronological order from left to right. 
+
+The bars indicate the 95% CI around the mean. This means that if we repeated collecting email data, we would expect the true mean like rate of TikTok posts would fall within this range 95% of samples.
+
+The figures and analysis below use the original like rate percent as the metric. 
+
+```{r, echo = FALSE, warning = FALSE}
+temp1 <- tt[!tt$rm, ]
+pct_temp1 <- by(temp1$like_pct, temp1$hour_f, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    Hour = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp1$SD_Mean_Open_Rate <- by(temp1$like_pct, temp1$hour_f, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp1$Lower_CI <- pct_temp1$Mean_Open_Rate - 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+pct_temp1$Upper_CI <- pct_temp1$Mean_Open_Rate + 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+
+pct_temp1$Hour <- factor(pct_temp1$Hour, levels = levels(tt$hour_f))
+
+
+ggplot(pct_temp1) + 
+ geom_col(aes(x = Hour, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[1]) +
+  geom_errorbar(aes(x = Hour, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Hour of Day of TikTok Post", y = "Like Rate (%)") + 
+  ggtitle("Forward Montana", subtitle = "TikTok") + 
+  scale_y_continuous(limits = c(0, 14), 
+                     labels = seq(0,14, 2), 
+                     breaks = seq(0, 14, 2)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 90, vjust = 0.65)) 
+```
+
+The average like rate is highest when TikTok posts are sent at 12PM or 3PM.
+
+
+## Question 2
+Next, we'll look at whether a certain combination of weekday and hour of day has an effect on like rates. Hour of day is the hour the TikTok was posted, where if an TikTok was sent at 12:37 PM the hour of day would be 12 PM. Note that axis text is in chronological order from left to right. Not all days and hour combinations have had an TikTok posted, so the x axis only reflects days and hours combinations where an TikTok was posted 
+
+The figures and analysis below use the original like rate percent as the metric. 
+
+```{r, echo = FALSE, warning = FALSE}
+temp1 <- tt[!tt$rm, ]
+pct_temp1 <- by(temp1$like_pct, temp1$day_hour, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    day_hour = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp1$SD_Mean_Open_Rate <- by(temp1$like_pct, temp1$day_hour, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp1$Lower_CI <- pct_temp1$Mean_Open_Rate - 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+pct_temp1$Upper_CI <- pct_temp1$Mean_Open_Rate + 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+
+pct_temp1$day_hour <- factor(pct_temp1$day_hour, levels = levels(tt$day_hour))
+pct_temp1 <- pct_temp1[!is.na(pct_temp1$Mean_Open_Rate), ]
+
+ggplot(pct_temp1) + 
+ geom_col(aes(x = day_hour, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[1]) +
+  # geom_errorbar(aes(x = day_hour, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Day & Hour", y = "Like Rate (%)") + 
+  ggtitle("Forward Montana", subtitle = "TikTok") + 
+  scale_y_continuous(limits = c(0, 14), 
+                     labels = seq(0, 14, 2), 
+                     breaks = seq(0, 14, 2)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 90)) 
+```
+
+Wednesday at 12PM resulted in the highest average like rate. Wednesday at 9AM and 3PM were also high, followed by Thursday at 1PM.
+
+
+## Question 3
+The third question was how the frequency of TikTok posts influenced like rates? First, the relationship between like rate and frequency of Instagrams postsed in a month, week, or day are shown. 
+
+### Monthly Frequency 
+The figures below illustrate the relationship between like rate across different frequencies of monthly posts. The bars indicate the 95% CI around the mean. This means that if we repeated collecting TikTok data, we would expect the true mean like rate of TikTok posts would fall within this range in 95% of samples. 
+
+The figures and analysis below use the original like rate percent as the metric. 
+
+```{r, echo = FALSE, warning = FALSE}
+temp1 <- tt[!tt$rm, ]
+pct_temp1 <- by(temp1$like_pct, temp1$month_freq, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    month_freq = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp1$SD_Mean_Open_Rate <- by(temp1$like_pct, temp1$month_freq, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp1$Lower_CI <- pct_temp1$Mean_Open_Rate - 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+pct_temp1$Upper_CI <- pct_temp1$Mean_Open_Rate + 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+
+pct_temp1$month_freq <- factor(pct_temp1$month_freq, levels = unique(pct_temp1$month_freq))
+
+
+ggplot(pct_temp1) + 
+ geom_col(aes(x = month_freq, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[1]) +
+  geom_errorbar(aes(x = month_freq, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Number of TikTok Posts in a Month", y = "Like Rate (%)", title = "Forward Montana") + 
+  scale_y_continuous(limits = c(0, 12), 
+                     labels = seq(0, 12, 2), 
+                     breaks = seq(0, 12, 2)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, vjust = 0.65)) 
+```
+
+The mean like rate for Forward Montana was highest with 6 TikTok posts in a month but showed no difference compared to 2 or 3 TikToks posted per month. This indicates that the number of TikToks posted in a month does not have a relationship with the TikTok like rate.
+
+
+
+### Weekly Frequency 
+The figures below illustrate the relationship between like rate across different frequencies of weekly posts. The bars indicate the 95% CI around the mean. This means that if we repeated collecting TikTok data, we would expect the true mean like rate of TikTok posts would fall within this range in 95% of samples. 
+
+The figures and analysis below use the original like rate percent as the metric. 
+
+```{r, echo = FALSE, warning = FALSE}
+temp1 <- tt[!tt$rm, ]
+pct_temp1 <- by(temp1$like_pct, temp1$week_freq, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    week_freq = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp1$SD_Mean_Open_Rate <- by(temp1$like_pct, temp1$week_freq, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp1$Lower_CI <- pct_temp1$Mean_Open_Rate - 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+pct_temp1$Upper_CI <- pct_temp1$Mean_Open_Rate + 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+
+pct_temp1$week_freq <- factor(pct_temp1$week_freq, levels = unique(pct_temp1$week_freq))
+
+
+ggplot(pct_temp1) + 
+ geom_col(aes(x = week_freq, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[1]) +
+  geom_errorbar(aes(x = week_freq, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Number of TikTok Posts in a Week", y = "Like Rate (%)", title = "Forward Montana") + 
+  scale_y_continuous(limits = c(0, 12), 
+                     labels = seq(0, 12, 2), 
+                     breaks = seq(0, 12, 2)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, vjust = 0.65)) 
+```
+
+The mean like rate for TikToks increased with the number of TikToks posted in a week. The highest average like rate occured when 3 TikToks were posted in a week, with a like rate around 9%.
+
+
+### Daily Frequency 
+The figures below illustrate the relationship between like rate across different frequencies of daily posts. The bars indicate the 95% CI around the mean. This means that if we repeated collecting TikTok data, we would expect the true mean like rate of TikTok posts would fall within this range in 95% of samples. 
+
+The figures and analysis below use the original like rate percent as the metric. 
+
+```{r, echo = FALSE, warning = FALSE}
+temp1 <- tt[!tt$rm, ]
+pct_temp1 <- by(temp1$like_pct, temp1$day_freq, mean, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist() %>% 
+  data.frame(
+    day_freq = names(.), 
+    Mean_Open_Rate = .
+  ) %>% 
+  `row.names<-`(NULL)
+pct_temp1$SD_Mean_Open_Rate <- by(temp1$like_pct, temp1$day_freq, sd, na.rm = TRUE) %>% 
+  lapply(function(x) x[1]) %>% 
+  unlist()
+pct_temp1$Lower_CI <- pct_temp1$Mean_Open_Rate - 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+pct_temp1$Upper_CI <- pct_temp1$Mean_Open_Rate + 1.96 * (pct_temp1$SD_Mean_Open_Rate / sqrt(nrow(temp1)))
+
+pct_temp1$day_freq <- factor(pct_temp1$day_freq, levels = unique(pct_temp1$day_freq))
+
+
+ggplot(pct_temp1) + 
+ geom_col(aes(x = day_freq, 
+              y = Mean_Open_Rate ),
+          stat = "identity",
+          fill = hex[1]) +
+  geom_errorbar(aes(x = day_freq, ymin = Lower_CI, ymax = Upper_CI), width = 0.2) + 
+  labs(x = "Number of TikTok Posts in a Day", y = "Like Rate (%)", title = "Forward Montana") + 
+  scale_y_continuous(limits = c(0, 10), 
+                     labels = seq(0, 10, 1), 
+                     breaks = seq(0, 10, 1)) +
+  theme_bw() + 
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, vjust = 0.65)) 
+```
+
+Only 1 TikTok has ever been posted in a day, so no comparison.
+
+
+# Conclusion
+The following summarizes the main conclusions from each communication method and addresses each sepcific question.
+
+## Email
+
+1) When accounting for recipients, Thursday is the best day to send emails with an expected open rate of 18-19% and 5PM is the best hour of day to send emails with an expected open rate of 25%. Sending emails before 1PM decreases open rates
+
+2) When accounting for recipients, Thursday at 5PM has the highest open rate. Thursday between 1PM and 5PM also had high open rates, as well as Friday at 5PM, and Wednesday at 4PM.
+
+3) Sending more emails in a month, week, and day all lower average open rates. The frequency of emails per month, week, and day follow with the corresponding open rate. The average open rate was 25% when 6 emails were sent per month, the average open rate was 24% when 2 emails were sent per week, and the average open rate was 18% when 1 email were sent per day.
+
+
+## Instagram
+
+1) Thursdays appear to be the day of the week with the highest engagement rates for Forward Montana Instagram posts while Monday had the highest engagement rates for Forward Montana Foundation posts. For Forward Montana, posting at 5PM resulted in the highest engagement rate while 2PM resulted in the highest engagement for Forward Montana Foundation posts.
+
+2) The average engagement rate was highest for Forward Montana Instagrams posted Tuesday at 12PM, Thursday at 11AM, or Friday at 5PM, while The average engagement rate was highest for Forward Montana Foundation Instagrams posted on Mondays at 8AM.
+
+3) Engagement rate decreases at Forward Montana with more than 10 IG posts a month, while engagement rate with Forward Montana Foundation decreases after 3 IG posts a month. Engagement rate decreases at Forward Montana with more than 3 IG posts a week and more than 2 IG posts a day. Data was inconclusive for weekly and daily frequency at Forward Montana Foundation.
+
+4) At both organizations, Instagram posts with just photos had the highest average engamgenet rates compared to graphics or both a graphic or photo.
+
+
+## Facebook
+
+1) Tuesday is the day of the week with the highest engagement rates for both organizations. At Forward Montana, posting at 1PM resulted in the highest average engagement rate while 1-3PM resulted in the highest average engagement rate for Forward Montana Foundation FB posts..
+
+2) The average engagement rate was highest for both organizations when FB posts were sent Tuesday at 1PM.
+
+3) Engagement rate tended to increase with FB post frequency across a month, with Forward Montana receiving the highest engagement rate with 5 FB posts per month while Forward Montana Foundation received the highest average engagement rate with 4 FB posts per month. Engagement rate decreased with more FB posts per week however. At Forward Montana, 2 posts per week had the highest engagement rate compared to 1 or 3 posts per week while at Forward Montana Foundation, 1 post per week had a higher mean engagmeent than 2 posts per week. However, there was no difference in engagmeent at Forward Montana between 1 or 2 FB posts per day.
+
+4) At both organizations, Facebook posts with just photos had the highest average engagement rates compared to graphics or both a graphic or photo. Additionally, both a graphic and photo in a FB post had higher engagement rates than FB posts with just a graphic.
+
+
+## TikTok
+
+1) The highest percent of likes per views/plays (like rate) was on Wednesday, with a clear pattern indicating that like rates are highest when TikToks are posted Tuesday - Thursday. The highet like rate occurs when TikToks are posted at 12PM or 3PM.
+
+2) Wednesday at 12PM resulted in the highest average like rate for TikToks. Wednesday at 9AM and 3PM also resulted in high like rates above 8%, followed by Thursday at 1PM.
+
+3) There was no pattern between like rate and the monthly frequency of TikTok posts. The like rate increased with more TikToks posted per week however, indicating that posting 3 TikToks in a week results in higher average engagement than only posting 1 or 2 TikToks per week.
 
 
 
